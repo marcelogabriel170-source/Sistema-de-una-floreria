@@ -72,7 +72,9 @@ function normalizar(value) {
 function esRosa(product) {
   return product.code === CODIGO_ROSAS || /^rosas?\b/.test(normalizar(product.name));
 }
+// Stock mínimo de cada producto (lo define la dueña en Productos). Si no lo definió: 10 para rosas y 5 para el resto
 function stockMinimo(product) {
+  if (Number.isInteger(product.minStock) && product.minStock >= 0) return product.minStock;
   return esRosa(product) ? STOCK_MINIMO_ROSAS : STOCK_MINIMO;
 }
 function productoPorCodigo(data, code) {
@@ -104,12 +106,13 @@ function ultimoProveedor(data, product) {
   return best ? { name: best.s.name, contact: best.s.contact, phone: best.s.phone, origin: "Proveedor registrado para este producto" } : null;
 }
 
-// Alertas que ve la pantalla: por ahora las rosas con stock en el mínimo o por debajo
+// Alertas que ve la pantalla: productos con stock en su mínimo o por debajo (los arreglos con receta no tienen stock propio)
 function alertasDeStock(data) {
   return (data.products || [])
-    .filter(p => p.active && esRosa(p) && p.stock <= STOCK_MINIMO_ROSAS)
+    .filter(p => p.active && !(Array.isArray(p.recipe) && p.recipe.length) && p.stock <= stockMinimo(p))
+    .sort((a, b) => a.stock - b.stock)
     .map(p => ({
-      productId: p.id, code: p.code || "", name: p.name, stock: p.stock, minStock: STOCK_MINIMO_ROSAS,
+      productId: p.id, code: p.code || "", name: p.name, stock: p.stock, minStock: stockMinimo(p),
       supplier: ultimoProveedor(data, p)
     }));
 }
@@ -127,15 +130,15 @@ async function enviarAlertaStockBajo(product, data) {
       `📦 *Stock actual:* ${product.stock} unidades\n` +
       `🏷️ *Categoría:* ${product.category}\n\n`;
 
-    // Rosas: además se indica a quién hay que pedirle más
-    if (esRosa(product)) {
+    // Se indica a quién hay que pedirle más
+    {
       const proveedor = ultimoProveedor(data || readData(), product);
       textoMensaje += proveedor
         ? `📞 *Pedir más al último proveedor:*\n` +
           `• Nombre: ${proveedor.name}\n` +
           (proveedor.contact ? `• Contacto: ${proveedor.contact}\n` : "") +
           `• Teléfono: ${proveedor.phone}\n\n`
-        : `📞 No hay proveedor registrado para este producto (código ${CODIGO_ROSAS}).\n\n`;
+        : `📞 No hay proveedor registrado para este producto${product.code ? ` (código ${product.code})` : ""}.\n\n`;
     }
     textoMensaje += `_Por favor, reabastece el inventario pronto._`;
 
@@ -190,6 +193,9 @@ function readData() {
 function migrarCodigos() {
   const data = readData();
   let changed = false;
+  // Los códigos iniciales se cargan una sola vez; después la dueña los administra desde Productos
+  if (data.codigosIniciales) return;
+  data.codigosIniciales = true; changed = true;
   if (!Array.isArray(data.products)) data.products = [];
 
   for (const c of CODIGOS_PRODUCTO) {
@@ -207,12 +213,13 @@ function migrarCodigos() {
   }
 
   for (const s of data.suppliers || []) {
+    if (s.productCode && !Array.isArray(s.productCodes)) { s.productCodes = [s.productCode]; changed = true; }
     if (s.productCode) continue;
     const product = (data.associations || [])
       .filter(a => a.supplierId === s.id)
       .map(a => data.products.find(p => p.id === a.productId))
       .find(p => p && CODIGOS_PRODUCTO.some(c => c.code === p.code));
-    if (product) { s.productCode = product.code; changed = true; }
+    if (product) { s.productCode = product.code; s.productCodes = [product.code]; changed = true; }
   }
 
   if (changed) writeData(data);
@@ -235,15 +242,7 @@ function text(value) { return typeof value === "string" ? value.trim() : ""; }
 // ==========================================
 const IGV_RATE = 0.18; // Los precios del sistema ya incluyen IGV
 
-// Datos del negocio que aparecen en la cabecera del comprobante.
-// ⚠️ Reemplazar por los datos reales del negocio.
-const EMISOR = {
-  ruc: "20000000001",
-  razonSocial: "STUDIO FLORAL S.A.C.",
-  nombreComercial: "Studio Floral",
-  direccion: "Av. Ejemplo 123, La Molina - Lima - Lima",
-  telefono: "(01) 000-0000"
-};
+// Los datos del negocio (emisor) se configuran en la página Configuración: ver backend/gestion.js
 
 const DOCUMENT_TYPES = {
   boleta:  { serie: "B001", counter: "boletaCorrelativo",  label: "BOLETA DE VENTA ELECTRÓNICA" },
@@ -441,44 +440,88 @@ app.get("/api/products", (req, res) => {
   let items = data.products || [];
   if (active === "true") items = items.filter(p => p.active);
   if (active === "false") items = items.filter(p => !p.active);
-  if (q) items = items.filter(p => [p.name, p.category, p.description].some(v => String(v || "").toLowerCase().includes(q)));
-  res.json(items);
+  if (q) items = items.filter(p => [p.name, p.code, p.category, p.description].some(v => String(v || "").toLowerCase().includes(q)));
+  // Datos calculados: mínimo efectivo y, en arreglos con receta, cuántos se pueden armar con los insumos
+  res.json(items.map(p => ({
+    ...p,
+    minStockEfectivo: stockMinimo(p),
+    ...(motor.tieneReceta(p) ? { available: motor.disponibleReceta(data, p) } : {})
+  })));
 });
 
-app.post("/api/products", (req, res) => {
-  const name = text(req.body.name), category = text(req.body.category);
-  const price = positiveNumber(req.body.price), stock = nonNegativeNumber(req.body.stock);
-  if (!name || !category || price === null || stock === null) {
-    return res.status(400).json({ error: "Completa nombre y categoría, indica un precio mayor que cero y un stock igual o mayor que cero." });
+// Valida y arma los datos de un producto (código, stock mínimo, tallos por paquete y receta)
+function datosProducto(body, data, actual) {
+  const name = text(body.name), category = text(body.category);
+  const price = positiveNumber(body.price), stock = nonNegativeNumber(body.stock);
+  if (!name || !category || price === null || stock === null || !Number.isInteger(stock)) {
+    return { error: "Completa nombre y categoría, indica un precio mayor que cero y un stock entero igual o mayor que cero." };
   }
+  const code = text(body.code).toUpperCase();
+  if (code && !/^[A-Z0-9][A-Z0-9-]{1,14}$/.test(code)) return { error: "El código debe tener de 2 a 15 letras, números o guiones, sin espacios (ej. ROS-001)." };
+  if (code && data.products.some(p => p.code === code && (!actual || p.id !== actual.id))) return { error: `El código ${code} ya lo usa otro producto.` };
+
+  let minStock = null;
+  if (body.minStock !== undefined && body.minStock !== null && body.minStock !== "") {
+    minStock = Number(body.minStock);
+    if (!Number.isInteger(minStock) || minStock < 0) return { error: "El stock mínimo debe ser un número entero igual o mayor que cero." };
+  }
+  let stemsPerPackage = null;
+  if (body.stemsPerPackage !== undefined && body.stemsPerPackage !== null && body.stemsPerPackage !== "") {
+    stemsPerPackage = Number(body.stemsPerPackage);
+    if (!Number.isInteger(stemsPerPackage) || stemsPerPackage < 1 || stemsPerPackage > 500) return { error: "Los tallos por paquete deben ser un número entero entre 1 y 500 (ej. 12 o 24)." };
+  }
+  if (actual && !stemsPerPackage && Number(actual.looseStems) > 0) {
+    return { error: `${actual.name} todavía tiene ${actual.looseStems} tallos sueltos: no puedes quitar los tallos por paquete.` };
+  }
+
+  // Receta: [{ productId, quantity, unit: "paquete" | "tallo" }]
+  const recipe = [];
+  for (const raw of Array.isArray(body.recipe) ? body.recipe : []) {
+    const ing = data.products.find(p => p.id === raw.productId);
+    const quantity = Number(raw.quantity);
+    const unit = raw.unit === "tallo" ? "tallo" : "paquete";
+    if (!ing || !ing.active) return { error: "La receta tiene un insumo que no existe o está inactivo." };
+    if (actual && ing.id === actual.id) return { error: "Un producto no puede ser insumo de sí mismo." };
+    if (motor.tieneReceta(ing)) return { error: `${ing.name} ya es un arreglo con receta: no se puede usar como insumo.` };
+    if (!Number.isInteger(quantity) || quantity < 1) return { error: `Indica una cantidad entera mayor que cero para ${ing.name}.` };
+    if (unit === "tallo" && !ing.stemsPerPackage) return { error: `Para usar ${ing.name} por tallos, primero indica sus «tallos por paquete».` };
+    if (recipe.some(r => r.productId === ing.id && r.unit === unit)) return { error: `${ing.name} está repetido en la receta.` };
+    recipe.push({ productId: ing.id, name: ing.name, quantity, unit });
+  }
+  if (recipe.length && actual && data.products.some(p => motor.tieneReceta(p) && p.recipe.some(r => r.productId === actual.id))) {
+    return { error: `${actual.name} es insumo de otro arreglo: no puede tener receta propia.` };
+  }
+  return { product: { name, category, description: text(body.description), price, stock, code: code || undefined, minStock, stemsPerPackage, recipe } };
+}
+
+app.post("/api/products", (req, res) => {
   const data = readData();
-  const product = { id: id("p"), name, category, description: text(req.body.description), price, stock, active: true, createdAt: new Date().toISOString() };
+  const r = datosProducto(req.body || {}, data, null);
+  if (r.error) return res.status(400).json({ error: r.error });
+  const product = { id: id("p"), ...r.product, looseStems: 0, active: true, createdAt: new Date().toISOString() };
   data.products.unshift(product);
   writeData(data);
-
-  // Si el producto nuevo se crea con stock bajo (<= mínimo del producto)
-  if (product.stock <= stockMinimo(product)) {
-    enviarAlertaStockBajo(product, data);
-  }
-
+  if (!motor.tieneReceta(product) && product.stock <= stockMinimo(product)) enviarAlertaStockBajo(product, data);
   res.status(201).json(product);
 });
 
 app.put("/api/products/:id", (req, res) => {
   const data = readData(), p = data.products.find(x => x.id === req.params.id);
   if (!p) return res.status(404).json({ error: "Producto no encontrado." });
-  const name = text(req.body.name), category = text(req.body.category);
-  const price = positiveNumber(req.body.price), stock = nonNegativeNumber(req.body.stock);
-  if (!name || !category || price === null || stock === null) return res.status(400).json({ error: "Revisa los campos obligatorios y los valores numéricos." });
-
-  Object.assign(p, { name, category, description: text(req.body.description), price, stock });
-  writeData(data);
-
-  // Si al actualizar queda con stock bajo
-  if (p.stock <= stockMinimo(p)) {
-    enviarAlertaStockBajo(p, data);
+  const r = datosProducto(req.body || {}, data, p);
+  if (r.error) return res.status(400).json({ error: r.error });
+  const codeBefore = p.code;
+  Object.assign(p, r.product);
+  if (!p.code) delete p.code;
+  // Si cambió el código, se actualiza en los proveedores que lo tenían
+  if (codeBefore && codeBefore !== p.code) {
+    for (const s of data.suppliers || []) {
+      if (Array.isArray(s.productCodes)) s.productCodes = s.productCodes.map(c => c === codeBefore ? p.code : c).filter(Boolean);
+      if (s.productCode === codeBefore) s.productCode = (s.productCodes || [])[0] || "";
+    }
   }
-
+  writeData(data);
+  if (!motor.tieneReceta(p) && p.stock <= stockMinimo(p)) enviarAlertaStockBajo(p, data);
   res.json(p);
 });
 
@@ -497,35 +540,41 @@ app.get("/api/suppliers", (req, res) => {
 });
 
 
-// Lista de códigos de producto que se pueden asignar a un proveedor
+// Lista de códigos de producto que se pueden asignar a un proveedor (los define la dueña en Productos)
 app.get("/api/product-codes", (_req, res) => {
   const data = readData();
-  res.json(CODIGOS_PRODUCTO.map(c => {
-    const p = productoPorCodigo(data, c.code);
-    return { code: c.code, name: p ? p.name : c.name, category: p ? p.category : c.category, productId: p ? p.id : null, active: p ? p.active : false };
-  }));
+  res.json((data.products || []).filter(p => p.code && !motor.tieneReceta(p))
+    .sort((a, b) => a.code.localeCompare(b.code))
+    .map(p => ({ code: p.code, name: p.name, category: p.category, productId: p.id, active: p.active })));
 });
 
-// Alertas de stock para mostrar en pantalla (rosas con 10 o menos)
+// Alertas de stock para mostrar en pantalla (productos en su stock mínimo o por debajo)
 app.get("/api/alerts/stock", (_req, res) => res.json(alertasDeStock(readData())));
 
-// El código identifica el producto que abastece el proveedor y crea el vínculo para las entradas de inventario
-function validarCodigoProducto(value) {
-  const code = text(value).toUpperCase();
-  return CODIGOS_PRODUCTO.some(c => c.code === code) ? code : null;
-}
-const MENSAJE_CODIGO = `Ingresa un código de producto válido: ${CODIGOS_PRODUCTO.map(c => c.code).join(", ")}.`;
-
-function vincularProveedor(data, supplier, code) {
-  const product = productoPorCodigo(data, code);
-  if (!product || !product.active) return `El producto con código ${code} no está disponible o está inactivo.`;
-  if (!Array.isArray(data.associations)) data.associations = [];
-  // Si el proveedor cambió de código, se quita el vínculo automático anterior
-  data.associations = data.associations.filter(a => !(a.supplierId === supplier.id && a.source === "codigo" && a.productId !== product.id));
-  if (!data.associations.some(a => a.productId === product.id && a.supplierId === supplier.id)) {
-    data.associations.unshift({ id: id("a"), productId: product.id, supplierId: supplier.id, source: "codigo", createdAt: new Date().toISOString() });
+// Los códigos identifican los productos que abastece el proveedor y crean el vínculo para las entradas de inventario.
+// Acepta productCodes (lista) y, por compatibilidad, productCode (uno solo).
+function validarCodigos(data, body) {
+  const raw = Array.isArray(body.productCodes) ? body.productCodes : (body.productCode ? [body.productCode] : []);
+  const codes = [...new Set(raw.map(c => text(c).toUpperCase()).filter(Boolean))];
+  if (!codes.length) return { error: "Elige al menos un producto que abastece este proveedor." };
+  for (const code of codes) {
+    const p = productoPorCodigo(data, code);
+    if (!p) return { error: `El código ${code} no existe. Créalo primero en Productos.` };
+    if (!p.active) return { error: `El producto ${p.name} (${code}) está inactivo.` };
   }
-  return null;
+  return { codes };
+}
+
+function vincularProveedor(data, supplier, codes) {
+  if (!Array.isArray(data.associations)) data.associations = [];
+  const ids = codes.map(c => productoPorCodigo(data, c).id);
+  // Se quitan los vínculos automáticos de productos que ya no abastece
+  data.associations = data.associations.filter(a => !(a.supplierId === supplier.id && a.source === "codigo" && !ids.includes(a.productId)));
+  for (const productId of ids) {
+    if (!data.associations.some(a => a.productId === productId && a.supplierId === supplier.id)) {
+      data.associations.unshift({ id: id("a"), productId, supplierId: supplier.id, source: "codigo", createdAt: new Date().toISOString() });
+    }
+  }
 }
 
 app.post("/api/suppliers", (req, res) => {
@@ -548,12 +597,9 @@ app.post("/api/suppliers", (req, res) => {
     });
   }
 
-  const productCode = validarCodigoProducto(req.body.productCode);
-  if (!productCode) {
-    return res.status(400).json({ error: MENSAJE_CODIGO });
-  }
-
   const data = readData();
+  const vc = validarCodigos(data, req.body);
+  if (vc.error) return res.status(400).json({ error: vc.error });
 
   if (data.suppliers.some(s => s.ruc === ruc)) {
     return res.status(409).json({
@@ -571,15 +617,14 @@ app.post("/api/suppliers", (req, res) => {
     contact,
     phone,
     email,
-    productCode,
+    productCodes: vc.codes,
+    productCode: vc.codes[0],
     notes: text(req.body.notes),
     active: true,
     createdAt: new Date().toISOString()
   };
 
-  const errorVinculo = vincularProveedor(data, supplier, productCode);
-  if (errorVinculo) return res.status(400).json({ error: errorVinculo });
-
+  vincularProveedor(data, supplier, vc.codes);
   data.suppliers.unshift(supplier);
   writeData(data);
 
@@ -618,10 +663,8 @@ app.put("/api/suppliers/:id", (req, res) => {
     });
   }
 
-  const productCode = validarCodigoProducto(req.body.productCode);
-  if (!productCode) {
-    return res.status(400).json({ error: MENSAJE_CODIGO });
-  }
+  const vc = validarCodigos(data, req.body);
+  if (vc.error) return res.status(400).json({ error: vc.error });
 
   Object.assign(s, {
     ruc,
@@ -632,12 +675,12 @@ app.put("/api/suppliers/:id", (req, res) => {
     contact,
     phone,
     email,
-    productCode,
+    productCodes: vc.codes,
+    productCode: vc.codes[0],
     notes: text(req.body.notes)
   });
 
-  const errorVinculo = vincularProveedor(data, s, productCode);
-  if (errorVinculo) return res.status(400).json({ error: errorVinculo });
+  vincularProveedor(data, s, vc.codes);
 
   writeData(data);
   res.json(s);
@@ -814,6 +857,25 @@ app.post("/api/inventory/entries", (req, res) => {
 
 app.get("/api/inventory/entries", (_req, res) => res.json(readData().entries || []));
 
+// Abrir un paquete: pasa de paquetes cerrados a tallos sueltos (remanentes)
+app.post("/api/inventory/open", (req, res) => {
+  const data = readData();
+  const p = data.products.find(x => x.id === req.body.productId && x.active);
+  if (!p) return res.status(400).json({ error: "Elige un producto activo." });
+  if (!p.stemsPerPackage) return res.status(400).json({ error: `${p.name} no tiene «tallos por paquete» configurado. Configúralo en Productos.` });
+  const packages = Number(req.body.packages || 1);
+  if (!Number.isInteger(packages) || packages < 1) return res.status(400).json({ error: "Indica cuántos paquetes abrir." });
+  if (packages > p.stock) return res.status(400).json({ error: `Solo hay ${p.stock} paquete(s) cerrados de ${p.name}.` });
+  const before = p.stock, looseBefore = Number(p.looseStems) || 0;
+  p.stock -= packages;
+  p.looseStems = looseBefore + packages * p.stemsPerPackage;
+  addMovement(data, { type: "apertura", productId: p.id, productName: p.name, quantity: packages, stockBefore: before, stockAfter: p.stock, reference: "",
+    note: `Paquete abierto: +${packages * p.stemsPerPackage} tallos sueltos (${looseBefore} → ${p.looseStems})` });
+  writeData(data);
+  if (p.stock <= stockMinimo(p)) enviarAlertaStockBajo(p, data);
+  res.json(p);
+});
+
 app.get("/api/inventory/movements", (req, res) => {
   const type = text(req.query.type);
   let items = readData().movements || [];
@@ -888,156 +950,28 @@ app.get("/api/inventory/counts/:id", (req, res) => {
 });
 
 // === BLOQUE DE VENTAS CON VERIFICACIÓN DE STOCK BAJO ===
-app.post("/api/sales", (req, res) => {
-  // El comprobante no se emite sin datos válidos del cliente:
-  // se valida ANTES de tocar el inventario
-  const documentType = text(req.body.documentType) || "boleta";
-  const checked = validateCustomer(documentType, req.body.customer);
-  if (checked.error) {
-    return res.status(400).json({ error: checked.error });
-  }
-  const customer = checked.customer;
-
-  const items = Array.isArray(req.body.items) ? req.body.items : [];
-  if (!items.length) {
-    return res.status(400).json({
-      error: "Añade al menos un producto o accesorio a la venta."
-    });
-  }
-
-  const data = readData();
-  const lines = [];
-  const productQuantities = new Map();
-
-  for (const item of items) {
-    const qty = Number(item.quantity);
-    if (!Number.isInteger(qty) || qty < 1) {
-      return res.status(400).json({
-        error: "Hay cantidades no válidas."
-      });
-    }
-
-    if (item.type !== "accessory") {
-      const product = data.products.find(
-        p => p.id === item.productId && p.active
-      );
-      if (!product) {
-        return res.status(400).json({
-          error: "Hay productos no válidos."
-        });
-      }
-
-      const accumulated = (productQuantities.get(product.id) || 0) + qty;
-      productQuantities.set(product.id, accumulated);
-
-      if (product.stock < accumulated) {
-        return res.status(400).json({
-          error: `Stock insuficiente para ${product.name}. Disponible: ${product.stock}.`
-        });
-      }
-
-      lines.push({
-        type: "product",
-        productId: product.id,
-        name: product.name,
-        quantity: qty,
-        unitPrice: product.price,
-        subtotal: Math.round(product.price * qty * 100) / 100
-      });
-      continue;
-    }
-
-    const name = text(item.name);
-    const price = positiveNumber(item.price);
-    if (!name || price === null) {
-      return res.status(400).json({
-        error: "Hay accesorios o precios no válidos."
-      });
-    }
-
-    lines.push({
-      type: "accessory",
-      accessoryId: text(item.accessoryId),
-      name,
-      quantity: qty,
-      unitPrice: price,
-      subtotal: Math.round(price * qty * 100) / 100
-    });
-  }
-
-  // Descontar existencias y verificar si el stock queda bajo (<= mínimo del producto)
-  const salidas = [];
-  for (const [productId, quantity] of productQuantities) {
-    const product = data.products.find(p => p.id === productId);
-    salidas.push({ product, quantity, stockBefore: product.stock });
-    product.stock -= quantity;
-
-    // Si tras la venta el stock llega al mínimo del producto (5; rosas: 10), envía la alerta de WhatsApp
-    if (product.stock <= stockMinimo(product)) {
-      enviarAlertaStockBajo(product, data);
-    }
-  }
-
-  // Detalle tributario por línea (como en un comprobante real):
-  // valor unitario = precio sin IGV; importe = precio con IGV × cantidad
-  const detail = lines.map(line => {
-    const valorVenta = round2(line.subtotal / (1 + IGV_RATE));
-    return {
-      ...line,
-      unit: "UND",
-      valorUnitario: round2(line.unitPrice / (1 + IGV_RATE)),
-      valorVenta,
-      igv: round2(line.subtotal - valorVenta)
-    };
-  });
-
-  const total = round2(detail.reduce((sum, line) => sum + line.subtotal, 0));
-
-  // Totales: Op. gravada + IGV = Importe total (se ajusta el redondeo para que siempre cuadre)
-  const opGravada = round2(total / (1 + IGV_RATE));
-  const igv = round2(total - opGravada);
-  const doc = nextDocumentNumber(data, documentType);
-
-  // Cada venta deja su salida en la bitácora de movimientos
-  for (const { product, quantity, stockBefore } of salidas) {
-    addMovement(data, {
-      type: "salida", productId: product.id, productName: product.name, quantity,
-      stockBefore, stockAfter: product.stock, reference: doc.numero, note: "Venta"
-    });
-  }
-
-  const sale = {
-    id: id("v"),
-    seller: quien(),
-    documentType,
-    documentLabel: DOCUMENT_TYPES[documentType].label,
-    serie: doc.serie,
-    correlativo: doc.correlativo,
-    // Se mantiene ticketNumber para que dashboard, reportes e historial sigan funcionando
-    ticketNumber: doc.numero,
-    emisor: EMISOR,
-    customer,
-    currency: "PEN",
-    paymentCondition: "CONTADO",
-    items: detail,
-    opGravada,
-    opExonerada: 0,
-    opInafecta: 0,
-    igvRate: IGV_RATE,
-    igv,
-    total,
-    date: new Date().toISOString()
-  };
-
-  data.sales.unshift(sale);
-  data.lastTicket = sale;
-  writeData(data);
-
-  res.status(201).json(sale);
-});
-
 app.get("/api/sales", (_req, res) => res.json(readData().sales || []));
 app.get("/api/ticket/latest", (_req, res) => res.json(readData().lastTicket));
+
+// Motor de stock (recetas de arreglos y tallos sueltos) y creación de ventas
+const motor = require("./stock")({ addMovement, round2 });
+const ventas = require("./ventas")({
+  validateCustomer, nextDocumentNumber, DOCUMENT_TYPES, IGV_RATE, round2, positiveNumber, text, id, quien,
+  stockMinimo, enviarAlertaStockBajo, emisorActual: data => gestion.emisorActual(data), motor
+});
+
+app.post("/api/sales", (req, res) => {
+  const data = readData();
+  const r = ventas.crearVenta(data, req.body || {});
+  if (r.error) return res.status(400).json({ error: r.error });
+  writeData(data);
+  res.status(201).json(r.sale);
+});
+
+// Merma, anulación de ventas, datos del emisor, pedidos y reportes (Sprint 3)
+const gestion = require("./gestion")(app, {
+  readData, writeData, id, text, addMovement, quien, nextCode, stockMinimo, enviarAlertaStockBajo, validRuc, round2, motor, ventas
+});
 
 app.get("/", (_req, res) => res.sendFile(path.join(ROOT, "paginas", "index.html")));
 app.get("*", (req, res, next) => {

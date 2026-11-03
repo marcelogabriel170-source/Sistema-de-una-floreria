@@ -14,6 +14,7 @@ document.addEventListener("DOMContentLoaded", () => {
     existencias: loadStock,
     entradas: loadEntries,
     fisico: loadCountForm,
+    merma: loadWaste,
     diferencias: loadDifferences,
     movimientos: loadMovements
   };
@@ -39,24 +40,27 @@ document.addEventListener("DOMContentLoaded", () => {
   // ---------- Existencias ----------
   $("inventory-search").addEventListener("input", renderStock);
 
+  // Los arreglos con receta no tienen stock propio: se controlan por sus insumos
+  const conStock = list => list.filter(p => !(p.recipe && p.recipe.length));
+
   async function loadStock() {
     try {
-      products = await api("/products?active=true");
+      products = conStock(await api("/products?active=true"));
       renderStock();
     } catch (e) {
-      $("inventory-table").innerHTML = emptyRow(5, e.message);
+      $("inventory-table").innerHTML = emptyRow(6, e.message);
     }
   }
 
   function renderStock() {
     const q = $("inventory-search").value.toLowerCase();
     const list = products.filter(p => [p.name, p.category].some(v => String(v).toLowerCase().includes(q)));
-    const low = products.filter(p => p.stock <= LOW_STOCK);
+    const low = products.filter(p => p.stock <= p.minStockEfectivo);
     const none = products.filter(p => p.stock === 0);
     const stats = [
       ["Referencias activas", "✿", products.length, "Productos activos"],
       ["Paquetes en stock", "▤", products.reduce((s, p) => s + p.stock, 0), "Suma de paquetes"],
-      ["Stock bajo", "!", low.length, `${LOW_STOCK} paquetes o menos`],
+      ["Stock bajo", "!", low.length, "En su stock mínimo o por debajo"],
       ["Sin existencias", "○", none.length, "Stock igual a cero"]
     ];
     $("inventory-stats").innerHTML = stats.map(([label, icon, value, note]) =>
@@ -67,10 +71,12 @@ document.addEventListener("DOMContentLoaded", () => {
       <tr>
         <td><div class="product-cell"><div class="product-thumb">${productIcon(p.category)}</div><div><div class="product-name">${escapeHtml(p.name)}</div><div class="muted">${escapeHtml(p.description || "")}</div></div></div></td>
         <td>${escapeHtml(p.category)}</td>
-        <td class="price">${p.stock}</td>
-        <td><span class="badge ${p.stock <= LOW_STOCK ? "low" : ""}">${p.stock === 0 ? "Agotado" : p.stock <= LOW_STOCK ? "Reponer pronto" : "Disponible"}</span></td>
+        <td class="price">${p.stock}<div class="muted">mín. ${p.minStockEfectivo}</div></td>
+        <td><span class="badge ${p.stock <= p.minStockEfectivo ? "low" : ""}">${p.stock === 0 ? "Agotado" : p.stock <= p.minStockEfectivo ? "Reponer pronto" : "Disponible"}</span></td>
+        <td>${p.stemsPerPackage ? `<strong>${p.looseStems || 0}</strong> <span class="muted">(${p.stemsPerPackage} por paquete)</span>
+          <div><button type="button" class="btn btn-secondary btn-small" data-open="${p.id}" ${p.stock ? "" : "disabled"}>Abrir 1 paquete</button></div>` : '<span class="muted">—</span>'}</td>
         <td><a class="btn btn-secondary btn-small" href="/paginas/catalogo.html">Editar stock</a></td>
-      </tr>`).join("") : emptyRow(5, "No hay resultados.");
+      </tr>`).join("") : emptyRow(6, "No hay resultados.");
   }
 
   // ---------- Entradas ----------
@@ -180,7 +186,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // ---------- Inventario físico ----------
   async function loadCountForm() {
     try {
-      products = await api("/products?active=true");
+      products = conStock(await api("/products?active=true"));
       renderCountForm();
     } catch (e) {
       $("count-table").innerHTML = emptyRow(5, e.message);
@@ -341,27 +347,97 @@ document.addEventListener("DOMContentLoaded", () => {
   $("diff-count").addEventListener("change", e => e.target.value && loadCountDetail(e.target.value));
   $("diff-filter").addEventListener("change", renderDifferences);
 
+  // ---------- Merma (HU-08) ----------
+  let wasteProducts = [];
+  // La unidad «tallos sueltos» solo se ofrece si el producto maneja tallos por paquete
+  function syncWasteUnit() {
+    const p = wasteProducts.find(x => x.id === $("waste-product").value);
+    const tallo = $("waste-unit").querySelector('option[value="tallo"]');
+    tallo.disabled = !(p && p.stemsPerPackage);
+    if (tallo.disabled) $("waste-unit").value = "paquete";
+  }
+  $("waste-product").addEventListener("change", syncWasteUnit);
+
+  // Abrir un paquete: pasa a tallos sueltos (remanentes)
+  $("inventory-table").addEventListener("click", async e => {
+    const btn = e.target.closest("[data-open]");
+    if (!btn) return;
+    const p = products.find(x => x.id === btn.dataset.open);
+    if (!p || !confirm(`¿Abrir 1 paquete de ${p.name}? Pasará a ${p.stemsPerPackage} tallos sueltos.`)) return;
+    try {
+      const r = await api("/inventory/open", { method: "POST", body: JSON.stringify({ productId: p.id, packages: 1 }) });
+      notify(`Se abrió 1 paquete de ${r.name}: quedan ${r.stock} paquetes cerrados y ${r.looseStems} tallos sueltos.`);
+      loadStock();
+    } catch (err) { notify(err.message, "error"); }
+  });
+  async function loadWaste() {
+    try {
+      const [all, waste] = await Promise.all([api("/products?active=true"), api("/inventory/waste")]);
+      const list = conStock(all);
+      wasteProducts = list;
+      const select = $("waste-product"), keep = select.value;
+      select.innerHTML = `<option value="">Selecciona un producto</option>` + list.map(p =>
+        `<option value="${p.id}" ${p.stock || p.looseStems ? "" : "disabled"}>${escapeHtml(p.name)} · ${p.stock} paquete${p.stock === 1 ? "" : "s"}${p.looseStems ? ` + ${p.looseStems} tallos` : ""}</option>`).join("");
+      if (list.some(p => p.id === keep)) select.value = keep;
+      syncWasteUnit();
+      const total = waste.reduce((a, w) => a + w.quantity, 0);
+      $("waste-summary").textContent = waste.length ? `${waste.length} registro${waste.length === 1 ? "" : "s"} · ${total} paquete${total === 1 ? "" : "s"} perdidos en total.` : "Las más recientes primero.";
+      $("waste-table").innerHTML = waste.length ? waste.map(w => `<tr>
+        <td><strong>${escapeHtml(w.number)}</strong></td>
+        <td>${dateTime(w.date)}</td>
+        <td>${escapeHtml(w.productName)}</td>
+        <td class="price">−${w.quantity}${w.unit === "tallo" ? ` <span class="muted">tallo${w.quantity === 1 ? "" : "s"}</span>` : ""}</td>
+        <td><span class="badge danger">${escapeHtml(w.reasonLabel)}</span>${w.note ? `<div class="muted">${escapeHtml(w.note)}</div>` : ""}</td>
+        <td>${w.value === null ? '<span class="muted">Sin costo</span>' : euro(w.value)}</td>
+        <td>${escapeHtml(w.user?.name || "—")}</td>
+      </tr>`).join("") : emptyRow(7, "Todavía no hay mermas registradas.");
+    } catch (e) {
+      $("waste-table").innerHTML = emptyRow(7, e.message);
+    }
+  }
+
+  $("waste-form").addEventListener("submit", async e => {
+    e.preventDefault();
+    const qty = Number($("waste-qty").value), unit = $("waste-unit").value;
+    const name = $("waste-product").selectedOptions[0]?.textContent.split(" · ")[0] || "el producto";
+    if (!confirm(`Se descontarán ${qty} ${unit === "tallo" ? "tallo(s) suelto(s)" : "paquete(s)"} de ${name} por merma. ¿Continuar?`)) return;
+    $("waste-submit").disabled = true;
+    try {
+      const w = await api("/inventory/waste", { method: "POST", body: JSON.stringify({
+        productId: $("waste-product").value, quantity: qty, unit, reason: $("waste-reason").value, note: $("waste-note").value
+      }) });
+      e.target.reset();
+      notify(`Merma ${w.number} registrada: ${w.quantity} ${w.unit === "tallo" ? "tallo(s)" : "paquete(s)"} de ${w.productName}. ${w.unit === "tallo" ? "Tallos sueltos" : "Stock"}: ${w.stockBefore} → ${w.stockAfter}.`);
+      loadWaste();
+    } catch (err) {
+      notify(err.message, "error");
+    } finally {
+      $("waste-submit").disabled = false;
+    }
+  });
+
   // ---------- Movimientos ----------
   async function loadMovements() {
     try {
       const type = $("move-type").value;
       const list = await api(`/inventory/movements${type ? "?type=" + type : ""}`);
-      const badge = { entrada: "", salida: "low", ajuste: "inactive" };
-      const label = { entrada: "Entrada", salida: "Salida", ajuste: "Ajuste" };
+      const badge = { entrada: "", salida: "low", ajuste: "inactive", merma: "danger", devolucion: "", apertura: "inactive" };
+      const label = { entrada: "Entrada", salida: "Salida", ajuste: "Ajuste", merma: "Merma", devolucion: "Devolución", apertura: "Paquete abierto" };
       $("move-table").innerHTML = list.length ? list.map(m => {
-        const qty = m.type === "entrada" ? `+${m.quantity}` : m.type === "salida" ? `−${m.quantity}` : (m.quantity > 0 ? "+" : "") + m.quantity;
+        const qty = ["entrada", "devolucion"].includes(m.type) ? `+${m.quantity}` : ["salida", "merma", "apertura"].includes(m.type) ? `−${m.quantity}` : (m.quantity > 0 ? "+" : "") + m.quantity;
         return `<tr>
           <td>${dateTime(m.date)}</td>
           <td><span class="badge ${badge[m.type] || ""}">${label[m.type] || escapeHtml(m.type)}</span></td>
           <td>${escapeHtml(m.productName)}</td>
-          <td class="price">${qty}</td>
-          <td>${m.stockBefore} → ${m.stockAfter}</td>
+          <td class="price">${qty}${m.unit === "tallo" ? ' <span class="muted">tallos</span>' : ""}</td>
+          <td>${m.stockBefore} → ${m.stockAfter}${m.unit === "tallo" ? ' <span class="muted">sueltos</span>' : ""}</td>
           <td>${escapeHtml(m.reference || "—")}</td>
           <td>${escapeHtml(m.note || "")}</td>
+          <td>${escapeHtml(m.user?.name || "—")}</td>
         </tr>`;
-      }).join("") : emptyRow(7, "Todavía no hay movimientos registrados.");
+      }).join("") : emptyRow(8, "Todavía no hay movimientos registrados.");
     } catch (e) {
-      $("move-table").innerHTML = emptyRow(7, e.message);
+      $("move-table").innerHTML = emptyRow(8, e.message);
     }
   }
 

@@ -133,17 +133,18 @@ function renderComprobante(rawSale) {
       </tr>`).join("");
 
   return `
-  <div class="cpe" id="comprobante-imprimible">
+  <div class="cpe${s.status === "anulada" ? " cpe-anulado" : ""}" id="comprobante-imprimible">
+    ${s.status === "anulada" ? `<div class="cpe-anulado-banner">COMPROBANTE ANULADO<span>${escapeHtml(s.voided?.reason || "")}${s.voided?.user ? " · " + escapeHtml(s.voided.user.name) : ""}${s.voided?.date ? " · " + dateTime(s.voided.date) : ""}</span></div>` : ""}
     <div class="cpe-header">
       <div class="cpe-emisor">
         <div class="cpe-logo">✿</div>
         <div class="cpe-razon">${escapeHtml(e.razonSocial)}</div>
         <div>${escapeHtml(e.nombreComercial)}</div>
         <div>${escapeHtml(e.direccion)}</div>
-        <div>Telf.: ${escapeHtml(e.telefono)}</div>
+        ${e.telefono ? `<div>Telf.: ${escapeHtml(e.telefono)}</div>` : ""}
       </div>
       <div class="cpe-box">
-        <div>R.U.C. ${escapeHtml(e.ruc)}</div>
+        <div>R.U.C. ${escapeHtml(e.ruc || "— (configurar)")}</div>
         <div class="cpe-tipo">${escapeHtml(s.label)}</div>
         <div class="cpe-numero">${escapeHtml(s.ticketNumber)}</div>
       </div>

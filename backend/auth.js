@@ -15,7 +15,7 @@ const sessions = new Map(); // token -> { userId, expires }
 const requestUser = new AsyncLocalStorage(); // usuario de la petición en curso (para registrar quién hizo cada operación)
 
 // Páginas que solo puede abrir el administrador
-const ADMIN_PAGES = ["proveedores.html", "reportes.html", "usuarios.html"];
+const ADMIN_PAGES = ["proveedores.html", "reportes.html", "usuarios.html", "configuracion.html"];
 
 function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString("hex");
@@ -130,6 +130,22 @@ module.exports = function setupAuth(app, { readData, writeData, id, text }) {
 
   app.get("/api/me", (req, res) => res.json(req.user));
 
+  // Cada usuario puede cambiar su propia contraseña (pide la actual)
+  app.post("/api/me/password", (req, res) => {
+    const { current, password } = req.body || {};
+    const data = readData();
+    const u = (data.users || []).find(x => x.id === req.user.id);
+    if (!u || !verifyPassword(current || "", u.passwordHash)) return res.status(400).json({ error: "La contraseña actual no es correcta." });
+    if (!validPassword(password)) return res.status(400).json({ error: "La nueva contraseña debe tener al menos 6 caracteres." });
+    if (password === current) return res.status(400).json({ error: "La nueva contraseña debe ser distinta de la actual." });
+    u.passwordHash = hashPassword(password);
+    writeData(data);
+    // Se cierran sus otras sesiones abiertas (la actual sigue)
+    const mine = readCookie(req, COOKIE);
+    for (const [t, ses] of sessions) if (ses.userId === u.id && t !== mine) sessions.delete(t);
+    res.json({ ok: true });
+  });
+
   // ---- Permisos del vendedor: lo que NO puede hacer se responde con 403 ----
   const soloAdmin = (req, res, next) => req.user.role === "admin" ? next()
     : res.status(403).json({ error: "Esta acción solo la puede realizar un administrador." });
@@ -140,6 +156,7 @@ module.exports = function setupAuth(app, { readData, writeData, id, text }) {
     ["post", "/api/associations"], ["delete", "/api/associations/:id"],
     ["get", "/api/costs"], ["post", "/api/costs"],
     ["get", "/api/inventory/counts"], ["get", "/api/inventory/counts/:id"],
+    ["post", "/api/sales/:id/void"], ["put", "/api/config/emisor"], ["get", "/api/reports"],
   ];
   for (const [method, route] of adminRules) app[method](route, soloAdmin);
   // El vendedor puede contar, pero solo el administrador ajusta el stock al conteo

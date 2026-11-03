@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="es">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#426b55">
+  <title>Pedidos | Studio Floral</title>
+  <link rel="stylesheet" href="/css/estilos.css">
+</head>
+
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="/paginas/index.html">
+        <div class="brand-mark">✿</div>
+        <div>
+          <div class="brand-name">Studio Floral</div>
+          <div class="brand-sub">Gestión floral</div>
+        </div>
+      </a>
+      <div>
+        <div class="nav-label">Espacio de trabajo</div>
+        <nav class="nav">
+          <a data-page="index.html" href="/paginas/index.html"><span class="nav-icon">⌂</span> Resumen</a>
+          <a data-page="catalogo.html" href="/paginas/catalogo.html"><span class="nav-icon">✿</span> Todos los
+            productos</a>
+          <a data-page="ramos.html" href="/paginas/ramos.html"><span class="nav-icon">💐</span> Catálogo de ramos</a>
+          <a data-page="flores.html" href="/paginas/flores.html"><span class="nav-icon">🌹</span> Catálogo de flores</a>
+          <a data-page="plantas.html" href="/paginas/plantas.html"><span class="nav-icon">🪴</span> Catálogo de
+            plantas</a>
+          <a data-page="decoracion.html" href="/paginas/decoracion.html"><span class="nav-icon">🎀</span> Decoración</a>
+          <a data-page="accesorios.html" href="/paginas/accesorios.html"><span class="nav-icon">🏺</span> Accesorios</a>
+          <a data-page="proveedores.html" href="/paginas/proveedores.html"><span class="nav-icon">♧</span>
+            Proveedores</a>
+          <a data-page="inventario.html" href="/paginas/inventario.html"><span class="nav-icon">▤</span> Inventario</a>
+          <a data-page="nueva-venta.html" href="/paginas/nueva-venta.html"><span class="nav-icon">＋</span> Nueva
+            venta</a>
+          <a data-page="ticket.html" href="/paginas/ticket.html"><span class="nav-icon">◧</span> Comprobantes</a>
+          <a data-page="dashboard.html" href="/paginas/dashboard.html"><span class="nav-icon">◫</span> Dashboard</a>
+          <a data-page="reportes.html" href="/paginas/reportes.html"><span class="nav-icon">▥</span> Reportes</a>
+        </nav>
+      </div>
+      <div class="sidebar-bottom"><strong>✧ Un detalle natural</strong><br>Cuida cada flor, cada pedido y cada cliente.
+      </div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div class="crumb">Studio Floral <span style="color:#b9c0b8"> / </span> <span id="breadcrumb">Resumen</span>
+        </div>
+        <div class="top-right"><span class="muted hide-mobile">Panel de administración</span>
+          <div class="avatar">SF</div>
+        </div>
+      </header>
+      <div class="content">
+        <div class="page-heading">
+          <div>
+            <div class="eyebrow">Pedidos personalizados · Objetivo 7</div>
+            <h1>Pedidos</h1>
+            <p>Anota aquí los pedidos que llegan por WhatsApp, Instagram, TikTok o en el puesto, con su fecha de entrega, estado y responsable.</p>
+          </div><button class="btn btn-primary" id="new-order-btn">＋ Nuevo pedido</button>
+        </div>
+        <div id="order-message"></div>
+        <div class="cards" id="order-stats"></div>
+        <div class="panel hidden" id="order-form-panel">
+          <div class="panel-head">
+            <div>
+              <div class="panel-title" id="order-form-title">Nuevo pedido</div>
+              <div class="panel-subtitle">Los campos con * son obligatorios.</div>
+            </div><button class="btn btn-secondary btn-small" type="button" id="close-order-form">Cerrar ✕</button>
+          </div>
+          <form id="order-form"><input type="hidden" id="order-id">
+            <div class="form-grid">
+              <div class="field"><label for="order-customer">Cliente *</label><input id="order-customer" maxlength="100" required></div>
+              <div class="field"><label for="order-phone">Teléfono</label><input id="order-phone" maxlength="30" placeholder="Para coordinar la entrega"></div>
+              <div class="field"><label for="order-channel">Canal *</label>
+                <select id="order-channel" required>
+                  <option value="">¿Por dónde llegó?</option>
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="instagram">Instagram</option>
+                  <option value="tiktok">TikTok</option>
+                  <option value="presencial">Presencial</option>
+                </select></div>
+              <div class="field"><label for="order-responsible">Responsable *</label><select id="order-responsible" required></select></div>
+              <div class="field"><label for="order-date">Fecha de entrega *</label><input id="order-date" type="date" required></div>
+              <div class="field"><label for="order-time">Hora de entrega</label><input id="order-time" type="time"></div>
+              <div class="field"><label for="order-total">Precio acordado (S/)</label><input id="order-total" type="number" min="0" step="0.01" placeholder="Opcional"></div>
+              <div class="field"><label for="order-advance">Adelanto (S/)</label><input id="order-advance" type="number" min="0" step="0.01" placeholder="0,00"></div>
+              <div class="field full">
+                <label>Productos que usa el pedido</label>
+                <small class="muted" style="margin-bottom:6px">Opcional. Al generar la venta se descuentan del stock (los arreglos con receta descuentan sus insumos).</small>
+                <div id="order-items"></div>
+                <div><button type="button" class="btn btn-secondary btn-small" id="order-item-add">＋ Agregar producto</button></div>
+              </div>
+              <div class="field"><label for="order-doc">DNI o RUC del cliente</label><input id="order-doc" inputmode="numeric" maxlength="11" placeholder="Para la boleta o factura"></div>
+              <div class="field full"><label for="order-description">Detalle del pedido *</label><textarea id="order-description" maxlength="800" required placeholder="Arreglo, flores, colores, dedicatoria, dirección de entrega…"></textarea></div>
+              <div class="field hidden" id="order-status-field"><label for="order-status">Estado</label>
+                <select id="order-status">
+                  <option value="pendiente">Pendiente</option>
+                  <option value="preparacion">En preparación</option>
+                  <option value="entregado">Entregado</option>
+                  <option value="cancelado">Cancelado</option>
+                </select></div>
+            </div>
+            <div class="form-actions"><button type="button" class="btn btn-secondary" id="cancel-order">Cancelar</button><button class="btn btn-primary" type="submit">Guardar pedido</button></div>
+          </form>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <div class="panel-title">Pedidos</div>
+              <div class="panel-subtitle" id="order-count">Cargando…</div>
+            </div>
+            <div class="toolbar">
+              <select id="order-filter-status" aria-label="Estado">
+                <option value="activos">Pendientes y en preparación</option>
+                <option value="">Todos</option>
+                <option value="pendiente">Pendientes</option>
+                <option value="preparacion">En preparación</option>
+                <option value="entregado">Entregados</option>
+                <option value="cancelado">Cancelados</option>
+              </select>
+              <select id="order-filter-channel" aria-label="Canal">
+                <option value="">Todos los canales</option>
+                <option value="whatsapp">WhatsApp</option>
+                <option value="instagram">Instagram</option>
+                <option value="tiktok">TikTok</option>
+                <option value="presencial">Presencial</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>N°</th><th>Entrega</th><th>Cliente</th><th>Pedido</th><th>Canal</th><th>Responsable</th><th>Pago</th><th>Estado</th><th></th></tr></thead>
+              <tbody id="orders-table"><tr><td colspan="9" class="empty">Cargando…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="footer-note">Studio Floral · Sistema de gestión</div>
+      </div>
+    </main>
+  </div>
+  <script>window.PAGE_NAME = "pedidos.html";</script>
+  <script src="/js/app.js"></script>
+  <script src="/js/pedidos.js"></script>
+</body>
+
+</html>

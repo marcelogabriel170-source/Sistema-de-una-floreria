@@ -165,7 +165,8 @@ document.addEventListener("DOMContentLoaded", () => {
     async function loadProducts() {
         try {
             const result = await api("/products?active=true");
-            products = Array.isArray(result) ? result : [];
+            // En arreglos con receta, el stock es cuántos se pueden armar con los insumos
+            products = (Array.isArray(result) ? result : []).map(p => p.recipe && p.recipe.length ? { ...p, stock: p.available ?? 0 } : p);
             updateProductOptions();
         } catch (error) {
             showMessage("sale-message", error.message, "error");

@@ -107,12 +107,9 @@
               <div class="field"><label for="supplier-email">Correo electrónico *</label><input id="supplier-email"
                   type="email" required maxlength="150" placeholder="pedidos@empresa.com"></div>
               <div class="field full">
-                <label for="supplier-code">Código de producto *</label>
-                <input id="supplier-code" name="productCode" list="product-codes" required maxlength="10"
-                  autocomplete="off" placeholder="Ej. ROS-001" style="text-transform:uppercase">
-                <datalist id="product-codes"></datalist>
-                <small id="supplier-code-hint" class="muted">Escribe el código del producto que te vende este proveedor.</small>
-                <div id="supplier-code-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>
+                <label>Productos que abastece *</label>
+                <small id="supplier-code-hint" class="muted">Marca todos los productos que te vende este proveedor. Los códigos se crean en Productos.</small>
+                <div id="supplier-code-chips" class="code-checks"></div>
               </div>
               <div class="field full"><label for="supplier-notes">Notas</label><textarea id="supplier-notes"
                   maxlength="500" placeholder="Horario de entrega, condiciones, productos…"></textarea></div>

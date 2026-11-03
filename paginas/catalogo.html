@@ -108,9 +108,34 @@
                 <input id="product-price" type="number" min="0.01" step="0.01" required placeholder="0,00">
               </div>
 
-              <div class="field">
-                <label for="product-stock">Stock inicial (paquetes) *</label>
+              <div class="field" id="product-stock-field">
+                <label for="product-stock">Stock (paquetes) *</label>
                 <input id="product-stock" type="number" min="0" step="1" required placeholder="0">
+              </div>
+
+              <div class="field">
+                <label for="product-code">Código</label>
+                <input id="product-code" maxlength="15" placeholder="Ej. ROS-001" style="text-transform:uppercase" autocomplete="off">
+                <small class="muted">Sirve para asignarlo a proveedores. Opcional.</small>
+              </div>
+
+              <div class="field" id="product-min-field">
+                <label for="product-min">Stock mínimo (paquetes)</label>
+                <input id="product-min" type="number" min="0" step="1" placeholder="Por defecto: 5 (rosas: 10)">
+                <small class="muted">Con esta cantidad o menos, el sistema avisa que hay que reponer.</small>
+              </div>
+
+              <div class="field" id="product-stems-field">
+                <label for="product-stems">Tallos por paquete</label>
+                <input id="product-stems" type="number" min="1" step="1" placeholder="Ej. 12 o 24">
+                <small class="muted">Para flores que se usan por tallo: permite abrir paquetes y llevar los tallos sueltos.</small>
+              </div>
+
+              <div class="field full">
+                <label>Receta del arreglo (opcional)</label>
+                <small class="muted" style="margin-bottom:6px">Si este producto se arma con otros (ramos, cajas, arreglos), indica qué usa. Al venderlo se descuentan esos insumos y no se usa el stock propio.</small>
+                <div id="recipe-rows"></div>
+                <div><button type="button" class="btn btn-secondary btn-small" id="recipe-add">＋ Agregar insumo</button></div>
               </div>
 
               <div class="field full">

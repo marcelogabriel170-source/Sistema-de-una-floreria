@@ -55,87 +55,72 @@
       <div class="content">
         <div class="page-heading">
           <div>
-            <div class="eyebrow">Seguimiento y control</div>
+            <div class="eyebrow">Reportes de gestión · Objetivo 8</div>
             <h1>Reportes</h1>
-            <p>Consulta indicadores sencillos y exporta los datos actuales a CSV para revisarlos en una hoja de cálculo.
-            </p>
-          </div><button class="btn btn-primary" id="export-report">↓ Exportar productos CSV</button>
+            <p>Elige un periodo para ver ventas, productos más vendidos, ganancia, merma y compras por proveedor. Las ventas anuladas no se suman.</p>
+          </div><button class="btn btn-primary" id="export-report" disabled>↓ Exportar a Excel</button>
         </div>
-        <div class="cards" id="report-stats">
-          <div class="stat-card">
-            <div class="stat-top">Productos activos <span class="stat-icon">✿</span></div>
-            <div class="stat-value">—</div>
+        <div id="report-message"></div>
+        <div class="panel">
+          <form id="report-filter" class="toolbar" style="align-items:flex-end">
+            <div class="field" style="margin:0"><label for="rep-from">Desde</label><input id="rep-from" type="date" required></div>
+            <div class="field" style="margin:0"><label for="rep-to">Hasta</label><input id="rep-to" type="date" required></div>
+            <button class="btn btn-primary" type="submit">Ver reporte</button>
+            <div class="toolbar" style="margin-left:auto">
+              <button class="btn btn-secondary btn-small" type="button" data-range="hoy">Hoy</button>
+              <button class="btn btn-secondary btn-small" type="button" data-range="semana">Últimos 7 días</button>
+              <button class="btn btn-secondary btn-small" type="button" data-range="mes">Este mes</button>
+              <button class="btn btn-secondary btn-small" type="button" data-range="mesAnterior">Mes anterior</button>
+            </div>
+          </form>
+        </div>
+        <div class="cards" id="report-stats"></div>
+        <div class="panel">
+          <div class="panel-head"><div>
+            <div class="panel-title">Productos más vendidos y ganancia</div>
+            <div class="panel-subtitle">Ganancia = ventas − costo de compra por paquete vigente a la fecha de cada venta. Precios con IGV.</div>
+          </div></div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>#</th><th>Producto</th><th>Cantidad</th><th>Ventas</th><th>Costo</th><th>Ganancia</th><th>Margen</th></tr></thead>
+            <tbody id="rep-products"><tr><td colspan="7" class="empty">Cargando…</td></tr></tbody>
+          </table></div>
+        </div>
+        <div class="split">
+          <div class="panel">
+            <div class="panel-head"><div>
+              <div class="panel-title">Merma del periodo</div>
+              <div class="panel-subtitle" id="rep-waste-sub">Paquetes perdidos y su valor al costo.</div>
+            </div></div>
+            <div class="table-wrap"><table>
+              <thead><tr><th>Producto</th><th>Paquetes</th><th>Valor</th><th>Motivos</th></tr></thead>
+              <tbody id="rep-waste"><tr><td colspan="4" class="empty">Cargando…</td></tr></tbody>
+            </table></div>
           </div>
-          <div class="stat-card">
-            <div class="stat-top">Stock total <span class="stat-icon">▤</span></div>
-            <div class="stat-value">—</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-top">Costo registrado más reciente <span class="stat-icon">S/</span></div>
-            <div class="stat-value">—</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-top">Ventas registradas <span class="stat-icon">↗</span></div>
-            <div class="stat-value">—</div>
+          <div class="panel">
+            <div class="panel-head"><div>
+              <div class="panel-title">Compras por proveedor</div>
+              <div class="panel-subtitle">Según las entradas de mercadería registradas.</div>
+            </div></div>
+            <div class="table-wrap"><table>
+              <thead><tr><th>Proveedor</th><th>Entradas</th><th>Paquetes</th><th>Monto</th></tr></thead>
+              <tbody id="rep-purchases"><tr><td colspan="4" class="empty">Cargando…</td></tr></tbody>
+            </table></div>
           </div>
         </div>
         <div class="panel">
-          <div class="panel-head">
-            <div>
-              <div class="panel-title">Resumen del catálogo</div>
-              <div class="panel-subtitle">Datos actuales de productos activos.</div>
-            </div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Producto</th>
-                  <th>Categoría</th>
-                  <th>Precio</th>
-                  <th>Stock</th>
-                  <th>Valor estimado</th>
-                </tr>
-              </thead>
-              <tbody id="report-products">
-                <tr>
-                  <td colspan="5" class="empty">Cargando…</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <div class="panel-head"><div>
+            <div class="panel-title">Pedidos con entrega en el periodo</div>
+            <div class="panel-subtitle">Por estado y por canal.</div>
+          </div></div>
+          <div id="rep-orders" class="toolbar"></div>
         </div>
-        <div class="panel">
-          <div class="panel-head">
-            <div>
-              <div class="panel-title">Historial de costos</div>
-              <div class="panel-subtitle">Historial guardado de compras por producto.</div>
-            </div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Fecha</th>
-                  <th>Producto</th>
-                  <th>Costo</th>
-                  <th>Nota</th>
-                </tr>
-              </thead>
-              <tbody id="report-costs">
-                <tr>
-                  <td colspan="4" class="empty">Cargando…</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <div class="footer-note">Studio Floral · Sistema de gestión · Datos guardados localmente</div>
+        <div class="footer-note">Studio Floral · Sistema de gestión</div>
       </div>
     </main>
   </div>
   <script>window.PAGE_NAME = "reportes.html";</script>
   <script src="/js/app.js"></script>
+  <script src="/js/vendor/xlsx.full.min.js"></script>
   <script src="/js/reportes.js"></script>
 </body>
 
