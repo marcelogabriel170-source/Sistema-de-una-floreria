@@ -15,7 +15,7 @@ const sessions = new Map(); // token -> { userId, expires }
 const requestUser = new AsyncLocalStorage(); // usuario de la petición en curso (para registrar quién hizo cada operación)
 
 // Páginas que solo puede abrir el administrador
-const ADMIN_PAGES = ["proveedores.html", "reportes.html", "usuarios.html"];
+const ADMIN_PAGES = ["proveedores.html", "reportes.html", "usuarios.html", "configuracion.html"];
 
 function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString("hex");
@@ -140,6 +140,7 @@ module.exports = function setupAuth(app, { readData, writeData, id, text }) {
     ["post", "/api/associations"], ["delete", "/api/associations/:id"],
     ["get", "/api/costs"], ["post", "/api/costs"],
     ["get", "/api/inventory/counts"], ["get", "/api/inventory/counts/:id"],
+    ["post", "/api/sales/:id/void"], ["put", "/api/config/emisor"], ["get", "/api/reports"],
   ];
   for (const [method, route] of adminRules) app[method](route, soloAdmin);
   // El vendedor puede contar, pero solo el administrador ajusta el stock al conteo

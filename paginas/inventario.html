@@ -66,6 +66,7 @@
           <button class="tab active" role="tab" data-tab="existencias" type="button">Existencias</button>
           <button class="tab" role="tab" data-tab="entradas" type="button">Entradas</button>
           <button class="tab" role="tab" data-tab="fisico" type="button">Inventario físico</button>
+          <button class="tab" role="tab" data-tab="merma" type="button">Merma</button>
           <button class="tab" role="tab" data-tab="diferencias" type="button">Diferencias</button>
           <button class="tab" role="tab" data-tab="movimientos" type="button">Movimientos</button>
         </div>
@@ -227,6 +228,73 @@
           </div>
         </section>
 
+        <!-- Merma (HU-08) -->
+        <section id="tab-merma" data-section="merma" class="hidden">
+          <div class="panel">
+            <div class="panel-head">
+              <div>
+                <div class="panel-title">Registrar merma</div>
+                <div class="panel-subtitle">Flores que se malogran o sobrantes de paquetes abiertos que ya no se pueden vender. Se descuentan del stock.</div>
+              </div>
+            </div>
+            <form id="waste-form">
+              <div class="form-grid">
+                <div class="field">
+                  <label for="waste-product">Producto *</label>
+                  <select id="waste-product" required></select>
+                </div>
+                <div class="field">
+                  <label for="waste-qty">Cantidad (paquetes) *</label>
+                  <input id="waste-qty" type="number" min="1" step="1" required placeholder="Ej. 1">
+                </div>
+                <div class="field">
+                  <label for="waste-reason">Motivo *</label>
+                  <select id="waste-reason" required>
+                    <option value="">Selecciona el motivo</option>
+                    <option value="marchita">Marchita</option>
+                    <option value="danada">Dañada</option>
+                    <option value="sobrante">Sobrante de paquete abierto</option>
+                    <option value="otro">Otro</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="waste-note">Detalle</label>
+                  <input id="waste-note" maxlength="250" placeholder="Opcional (obligatorio si el motivo es Otro)">
+                </div>
+              </div>
+              <div class="form-actions">
+                <button class="btn btn-primary" type="submit" id="waste-submit">Registrar merma</button>
+              </div>
+            </form>
+          </div>
+          <div class="panel">
+            <div class="panel-head">
+              <div>
+                <div class="panel-title">Mermas registradas</div>
+                <div class="panel-subtitle" id="waste-summary">Las más recientes primero.</div>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>N°</th>
+                    <th>Fecha</th>
+                    <th>Producto</th>
+                    <th>Cantidad</th>
+                    <th>Motivo</th>
+                    <th>Valor estimado</th>
+                    <th>Registró</th>
+                  </tr>
+                </thead>
+                <tbody id="waste-table">
+                  <tr><td colspan="7" class="empty">Cargando…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
         <!-- Diferencias -->
         <section id="tab-diferencias" data-section="diferencias" class="hidden">
           <div class="panel">
@@ -274,7 +342,7 @@
             <div class="panel-head">
               <div>
                 <div class="panel-title">Movimientos de stock</div>
-                <div class="panel-subtitle">Entradas, salidas por venta y ajustes. Se muestran los últimos 300.</div>
+                <div class="panel-subtitle">Entradas, salidas por venta, merma, devoluciones por anulación y ajustes. Se muestran los últimos 300.</div>
               </div>
               <div class="toolbar">
                 <select id="move-type" aria-label="Tipo de movimiento">
@@ -282,6 +350,8 @@
                   <option value="entrada">Entradas</option>
                   <option value="salida">Salidas</option>
                   <option value="ajuste">Ajustes</option>
+                  <option value="merma">Merma</option>
+                  <option value="devolucion">Devoluciones por anulación</option>
                 </select>
               </div>
             </div>
@@ -296,10 +366,11 @@
                     <th>Stock</th>
                     <th>Referencia</th>
                     <th>Detalle</th>
+                    <th>Usuario</th>
                   </tr>
                 </thead>
                 <tbody id="move-table">
-                  <tr><td colspan="7" class="empty">Cargando…</td></tr>
+                  <tr><td colspan="8" class="empty">Cargando…</td></tr>
                 </tbody>
               </table>
             </div>

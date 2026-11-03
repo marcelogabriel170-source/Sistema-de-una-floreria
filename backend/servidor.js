@@ -235,15 +235,7 @@ function text(value) { return typeof value === "string" ? value.trim() : ""; }
 // ==========================================
 const IGV_RATE = 0.18; // Los precios del sistema ya incluyen IGV
 
-// Datos del negocio que aparecen en la cabecera del comprobante.
-// ⚠️ Reemplazar por los datos reales del negocio.
-const EMISOR = {
-  ruc: "20000000001",
-  razonSocial: "STUDIO FLORAL S.A.C.",
-  nombreComercial: "Studio Floral",
-  direccion: "Av. Ejemplo 123, La Molina - Lima - Lima",
-  telefono: "(01) 000-0000"
-};
+// Los datos del negocio (emisor) se configuran en la página Configuración: ver backend/gestion.js
 
 const DOCUMENT_TYPES = {
   boleta:  { serie: "B001", counter: "boletaCorrelativo",  label: "BOLETA DE VENTA ELECTRÓNICA" },
@@ -1015,7 +1007,7 @@ app.post("/api/sales", (req, res) => {
     correlativo: doc.correlativo,
     // Se mantiene ticketNumber para que dashboard, reportes e historial sigan funcionando
     ticketNumber: doc.numero,
-    emisor: EMISOR,
+    emisor: gestion.emisorActual(data),
     customer,
     currency: "PEN",
     paymentCondition: "CONTADO",
@@ -1038,6 +1030,11 @@ app.post("/api/sales", (req, res) => {
 
 app.get("/api/sales", (_req, res) => res.json(readData().sales || []));
 app.get("/api/ticket/latest", (_req, res) => res.json(readData().lastTicket));
+
+// Merma, anulación de ventas, datos del emisor, pedidos y reportes (Sprint 3)
+const gestion = require("./gestion")(app, {
+  readData, writeData, id, text, addMovement, quien, nextCode, stockMinimo, enviarAlertaStockBajo, validRuc, round2
+});
 
 app.get("/", (_req, res) => res.sendFile(path.join(ROOT, "paginas", "index.html")));
 app.get("*", (req, res, next) => {

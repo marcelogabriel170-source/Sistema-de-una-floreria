@@ -14,6 +14,7 @@ document.addEventListener("DOMContentLoaded", () => {
     existencias: loadStock,
     entradas: loadEntries,
     fisico: loadCountForm,
+    merma: loadWaste,
     diferencias: loadDifferences,
     movimientos: loadMovements
   };
@@ -341,15 +342,59 @@ document.addEventListener("DOMContentLoaded", () => {
   $("diff-count").addEventListener("change", e => e.target.value && loadCountDetail(e.target.value));
   $("diff-filter").addEventListener("change", renderDifferences);
 
+  // ---------- Merma (HU-08) ----------
+  async function loadWaste() {
+    try {
+      const [list, waste] = await Promise.all([api("/products?active=true"), api("/inventory/waste")]);
+      const select = $("waste-product"), keep = select.value;
+      select.innerHTML = `<option value="">Selecciona un producto</option>` + list.map(p =>
+        `<option value="${p.id}" ${p.stock ? "" : "disabled"}>${escapeHtml(p.name)} · ${p.stock} paquete${p.stock === 1 ? "" : "s"}</option>`).join("");
+      if (list.some(p => p.id === keep)) select.value = keep;
+      const total = waste.reduce((a, w) => a + w.quantity, 0);
+      $("waste-summary").textContent = waste.length ? `${waste.length} registro${waste.length === 1 ? "" : "s"} · ${total} paquete${total === 1 ? "" : "s"} perdidos en total.` : "Las más recientes primero.";
+      $("waste-table").innerHTML = waste.length ? waste.map(w => `<tr>
+        <td><strong>${escapeHtml(w.number)}</strong></td>
+        <td>${dateTime(w.date)}</td>
+        <td>${escapeHtml(w.productName)}</td>
+        <td class="price">−${w.quantity}</td>
+        <td><span class="badge danger">${escapeHtml(w.reasonLabel)}</span>${w.note ? `<div class="muted">${escapeHtml(w.note)}</div>` : ""}</td>
+        <td>${w.value === null ? '<span class="muted">Sin costo</span>' : euro(w.value)}</td>
+        <td>${escapeHtml(w.user?.name || "—")}</td>
+      </tr>`).join("") : emptyRow(7, "Todavía no hay mermas registradas.");
+    } catch (e) {
+      $("waste-table").innerHTML = emptyRow(7, e.message);
+    }
+  }
+
+  $("waste-form").addEventListener("submit", async e => {
+    e.preventDefault();
+    const qty = Number($("waste-qty").value);
+    const name = $("waste-product").selectedOptions[0]?.textContent.split(" · ")[0] || "el producto";
+    if (!confirm(`Se descontarán ${qty} paquete(s) de ${name} por merma. ¿Continuar?`)) return;
+    $("waste-submit").disabled = true;
+    try {
+      const w = await api("/inventory/waste", { method: "POST", body: JSON.stringify({
+        productId: $("waste-product").value, quantity: qty, reason: $("waste-reason").value, note: $("waste-note").value
+      }) });
+      e.target.reset();
+      notify(`Merma ${w.number} registrada: ${w.quantity} paquete(s) de ${w.productName}. Stock: ${w.stockBefore} → ${w.stockAfter}.`);
+      loadWaste();
+    } catch (err) {
+      notify(err.message, "error");
+    } finally {
+      $("waste-submit").disabled = false;
+    }
+  });
+
   // ---------- Movimientos ----------
   async function loadMovements() {
     try {
       const type = $("move-type").value;
       const list = await api(`/inventory/movements${type ? "?type=" + type : ""}`);
-      const badge = { entrada: "", salida: "low", ajuste: "inactive" };
-      const label = { entrada: "Entrada", salida: "Salida", ajuste: "Ajuste" };
+      const badge = { entrada: "", salida: "low", ajuste: "inactive", merma: "danger", devolucion: "" };
+      const label = { entrada: "Entrada", salida: "Salida", ajuste: "Ajuste", merma: "Merma", devolucion: "Devolución" };
       $("move-table").innerHTML = list.length ? list.map(m => {
-        const qty = m.type === "entrada" ? `+${m.quantity}` : m.type === "salida" ? `−${m.quantity}` : (m.quantity > 0 ? "+" : "") + m.quantity;
+        const qty = ["entrada", "devolucion"].includes(m.type) ? `+${m.quantity}` : ["salida", "merma"].includes(m.type) ? `−${m.quantity}` : (m.quantity > 0 ? "+" : "") + m.quantity;
         return `<tr>
           <td>${dateTime(m.date)}</td>
           <td><span class="badge ${badge[m.type] || ""}">${label[m.type] || escapeHtml(m.type)}</span></td>
@@ -358,10 +403,11 @@ document.addEventListener("DOMContentLoaded", () => {
           <td>${m.stockBefore} → ${m.stockAfter}</td>
           <td>${escapeHtml(m.reference || "—")}</td>
           <td>${escapeHtml(m.note || "")}</td>
+          <td>${escapeHtml(m.user?.name || "—")}</td>
         </tr>`;
-      }).join("") : emptyRow(7, "Todavía no hay movimientos registrados.");
+      }).join("") : emptyRow(8, "Todavía no hay movimientos registrados.");
     } catch (e) {
-      $("move-table").innerHTML = emptyRow(7, e.message);
+      $("move-table").innerHTML = emptyRow(8, e.message);
     }
   }
 

@@ -2,7 +2,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const fmt = n => new Intl.NumberFormat("es-ES").format(n);
   async function load() {
     try {
-      const [products,suppliers,sales] = await Promise.all([api("/products"),api("/suppliers"),api("/sales")]);
+      const [products,suppliers,allSales] = await Promise.all([api("/products"),api("/suppliers"),api("/sales")]);
+      const sales=allSales.filter(s=>s.status!=="anulada"); // las ventas anuladas no cuentan
       const activeProducts=products.filter(p=>p.active), activeSuppliers=suppliers.filter(s=>s.active);
       const revenue=sales.reduce((s,v)=>s+v.total,0);
       const stats = [activeProducts.length,activeSuppliers.length,activeProducts.reduce((s,p)=>s+p.stock,0),sales.length];

@@ -93,3 +93,9 @@ body:not(.rol-admin):not(.rol-vendedor) .solo-admin { visibility: hidden; }
 .login-card p { margin: 0 0 20px; color: #6b7280; font-size: 14px; }
 .login-card .field { margin-bottom: 14px; }
 .login-card .btn { width: 100%; justify-content: center; }
+
+/* ---------- Comprobante anulado ---------- */
+.cpe-anulado{position:relative}
+.cpe-anulado-banner{margin:-6px 0 14px;padding:8px 10px;border:2px solid #a23e37;color:#a23e37;font-weight:700;text-align:center;letter-spacing:2px;border-radius:4px}
+.cpe-anulado-banner span{display:block;letter-spacing:0;font-weight:400;font-size:11px;margin-top:2px}
+.cpe-anulado table,.cpe-anulado .cpe-header{opacity:.6}

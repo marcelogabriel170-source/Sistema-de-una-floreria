@@ -88,7 +88,7 @@ document.addEventListener("DOMContentLoaded", mostrarAlertasStock);
 
 // ---------- Sesión y perfiles (administrador y vendedor) ----------
 // El servidor es quien valida los permisos; aquí solo se ocultan las opciones que el perfil no puede usar.
-const ADMIN_ONLY_PAGES = ["proveedores.html", "reportes.html", "usuarios.html"];
+const ADMIN_ONLY_PAGES = ["proveedores.html", "reportes.html", "usuarios.html", "configuracion.html"];
 const isAdmin = () => window.USER?.role === "admin";
 
 function marcarSoloAdmin() {
@@ -108,10 +108,16 @@ function marcarSoloAdmin() {
 
 function pintarUsuario(user) {
   document.body.classList.add(user.role === "admin" ? "rol-admin" : "rol-vendedor");
-  // Enlace a Usuarios en el menú (solo se ve para el administrador)
+  // Enlaces nuevos del menú: Pedidos e Historial (todos), Usuarios y Configuración (solo administrador)
   const nav = document.querySelector(".nav");
   if (nav && !nav.querySelector('[data-page="usuarios.html"]')) {
-    nav.insertAdjacentHTML("beforeend", `<a data-page="usuarios.html" href="/paginas/usuarios.html" class="solo-admin"><span class="nav-icon">👤</span> Usuarios</a>`);
+    const venta = nav.querySelector('[data-page="nueva-venta.html"]');
+    if (!nav.querySelector('[data-page="historial-ventas.html"]')) {
+      (venta || nav.lastElementChild).insertAdjacentHTML("afterend", `<a data-page="historial-ventas.html" href="/paginas/historial-ventas.html"><span class="nav-icon">📋</span> Historial de ventas</a>`);
+    }
+    (venta || nav.lastElementChild).insertAdjacentHTML("afterend", `<a data-page="pedidos.html" href="/paginas/pedidos.html"><span class="nav-icon">📦</span> Pedidos</a>`);
+    nav.insertAdjacentHTML("beforeend", `<a data-page="usuarios.html" href="/paginas/usuarios.html" class="solo-admin"><span class="nav-icon">👤</span> Usuarios</a>
+      <a data-page="configuracion.html" href="/paginas/configuracion.html" class="solo-admin"><span class="nav-icon">⚙</span> Configuración</a>`);
     setActiveNav();
   }
   // Nombre, perfil y botón para salir en la barra superior

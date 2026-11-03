@@ -6,8 +6,23 @@ document.addEventListener("DOMContentLoaded", async () => {
     const exportExcelBtn = document.getElementById("export-excel-ticket");
     const exportAllExcelBtn = document.getElementById("export-all-excel");
 
+    const voidBtn = document.getElementById("void-ticket");
     let sales = [];
     let selectedSale = null;
+
+    // Anular la venta seleccionada (solo administrador): pide el motivo y devuelve el stock
+    voidBtn.addEventListener("click", async () => {
+        if (!selectedSale || selectedSale.status === "anulada") return;
+        const reason = prompt(`Motivo para anular ${selectedSale.ticketNumber}:\n(Los productos vuelven al stock)`);
+        if (reason === null) return;
+        if (reason.trim().length < 3) return showMessage("ticket-message", "Escribe el motivo de la anulación.", "error");
+        try {
+            const id = selectedSale.id;
+            await api(`/sales/${id}/void`, { method: "POST", body: JSON.stringify({ reason }) });
+            showMessage("ticket-message", `Venta ${selectedSale.ticketNumber} anulada. El stock se devolvió.`);
+            await loadSales(id);
+        } catch (e) { showMessage("ticket-message", e.message, "error"); }
+    });
 
     // Imprimir el ticket actual
     printBtn.addEventListener("click", () => window.print());
@@ -76,7 +91,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         URL.revokeObjectURL(url);
     });
 
-    async function loadSales() {
+    async function loadSales(keepId) {
         try {
             sales = await api("/sales");
             if (countEl) {
@@ -93,7 +108,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
             tableBody.innerHTML = sales.map(sale => `
                 <tr data-id="${sale.id}" style="cursor:pointer;">
-                    <td><strong>${escapeHtml(sale.ticketNumber)}</strong></td>
+                    <td><strong>${escapeHtml(sale.ticketNumber)}</strong>${sale.status === "anulada" ? ' <span class="badge danger">Anulada</span>' : ""}</td>
                     <td>${dateOnly(sale.date)}</td>
                     <td class="price">${euro(sale.total)}</td>
                     <td><button class="btn btn-secondary btn-small" data-select="${sale.id}">Ver</button></td>
@@ -102,7 +117,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
             // Seleccionar por defecto el primer ticket (el más reciente)
             if (sales.length > 0) {
-                selectTicket(sales[0].id);
+                selectTicket(sales.some(s => s.id === keepId) ? keepId : sales[0].id);
             }
 
         } catch (e) {
@@ -122,6 +137,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         printBtn.disabled = false;
         exportExcelBtn.disabled = false;
+        voidBtn.disabled = selectedSale.status === "anulada";
 
         container.innerHTML = renderComprobante(selectedSale);
     }

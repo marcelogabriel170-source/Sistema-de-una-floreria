@@ -86,6 +86,18 @@ Cámbialos al entrar, en la página **Usuarios**. Para que las contraseñas inic
 
 **En Render (plan gratuito).** Los datos se reinician cuando el servidor se reinicia, y con ellos los usuarios: vuelven `admin` y `vendedor` con las contraseñas de `ADMIN_PASSWORD` y `VENDEDOR_PASSWORD`. Por eso conviene definir esas dos variables en Render (Environment).
 
+## Sprint 3: merma, anulación, emisor, pedidos y reportes
+
+**Merma (HU-08).** En Inventario › Merma se registra el producto, la cantidad en paquetes y el motivo (marchita, dañada, sobrante de paquete abierto u otro). Se descuenta del stock, recibe un número `MR-00001` y aparece en Movimientos. Se valoriza con el último costo de compra. La pueden registrar el administrador y el vendedor.
+
+**Anular ventas (HU-17).** Solo el administrador, desde Comprobantes o Historial de ventas. Pide un motivo, devuelve al stock lo vendido (movimiento «Devolución») y el comprobante queda marcado como ANULADO. Las ventas anuladas no se suman en el dashboard ni en los reportes.
+
+**Datos del emisor.** En Configuración (solo administrador) se guardan el RUC (se valida el dígito verificador), la razón social, el nombre comercial, la dirección y el teléfono. Se usan en cada boleta y factura nueva; las ya emitidas conservan los datos con los que salieron.
+
+**Pedidos personalizados (objetivo 7).** En Pedidos se anota el cliente, el canal (WhatsApp, Instagram, TikTok o presencial), el detalle, la fecha y hora de entrega, el precio y el adelanto, y el responsable. Estados: pendiente → en preparación → entregado (o cancelado). Se marcan los pedidos para hoy y los atrasados.
+
+**Reportes (objetivo 8, solo administrador).** Filtro por fechas; ventas, ganancia estimada (ventas − costo de compra vigente a la fecha de cada venta), productos más vendidos, merma del periodo, compras por proveedor y pedidos. El botón «Exportar a Excel» descarga un .xlsx con cinco hojas (Resumen, Productos, Merma, Compras y Ventas). La librería SheetJS está incluida en `js/vendor/` (licencia Apache-2.0), así que funciona sin internet.
+
 ## Consulta automática de DNI y RUC
 - El RUC usa openruc.com y no necesita configuración.
 - El DNI usa apis.net.pe, que exige un token. Antes no se enviaba ninguno y por eso la consulta fallaba. Para activarla:
