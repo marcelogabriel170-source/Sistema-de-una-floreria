@@ -28,7 +28,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                             ? `<div class="muted">Boleta · DNI ${escapeHtml(sale.customer?.docNumber || sale.customer?.dni)}</div><div class="muted">${escapeHtml(sale.customer?.name)}</div>`
                             : `<div class="muted">Ticket</div>`}
                     </td>
-                    <td>${dateTime(sale.date)}</td>
+                    <td>${dateTime(sale.date)}${sale.seller ? `<div class="muted">Vendió: ${escapeHtml(sale.seller.name)}</div>` : ""}</td>
                     <td>${itemsList}</td>
                     <td class="price"><strong>${euro(sale.total)}</strong></td>
                 </tr>

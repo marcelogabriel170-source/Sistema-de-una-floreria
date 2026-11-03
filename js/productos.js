@@ -66,6 +66,7 @@ document.addEventListener("DOMContentLoaded", () => {
     select.innerHTML = `<option value="">Selecciona un producto</option>` + active.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
   }
   async function loadCosts() {
+    if ((await window.sessionReady)?.role !== "admin") return; // el vendedor no ve costos
     try {
       const costs = await api("/costs");
       document.getElementById("costs-table").innerHTML = costs.length ? costs.map(c => `<tr><td>${dateTime(c.date)}</td><td>${escapeHtml(c.product?.name || "Producto no disponible")}</td><td class="price">${euro(c.cost)}</td><td>${escapeHtml(c.note || "—")}</td></tr>`).join("") : emptyRow(4, "Todavía no hay costos registrados.");

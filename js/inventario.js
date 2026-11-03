@@ -253,7 +253,7 @@ document.addEventListener("DOMContentLoaded", () => {
       $("count-note").value = "";
       $("count-adjust").checked = false;
       pendingCountId = count.id;
-      openTab("diferencias");
+      if (isAdmin()) openTab("diferencias");
       const s = count.summary;
       notify(`Inventario ${count.number} guardado: ${s.products} productos contados, ${s.withDifference} con diferencia.`);
     } catch (err) {

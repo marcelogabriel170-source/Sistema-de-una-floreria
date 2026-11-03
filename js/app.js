@@ -10,6 +10,11 @@ async function api(path, options = {}) {
     headers: { "Content-Type": "application/json", ...(options.headers || {}) }
   });
   const payload = response.status === 204 ? null : await response.json().catch(() => ({}));
+  // Sesión vencida o cerrada: volver al inicio de sesión
+  if (response.status === 401 && !location.pathname.endsWith("/login.html")) {
+    location.href = "/paginas/login.html";
+    throw new Error(payload?.error || "Inicia sesión para continuar.");
+  }
   if (!response.ok) throw new Error(payload?.error || "No se pudo completar la operación.");
   return payload;
 }
@@ -80,3 +85,61 @@ async function mostrarAlertasStock() {
   overlay.querySelector("#stock-alert-close").focus();
 }
 document.addEventListener("DOMContentLoaded", mostrarAlertasStock);
+
+// ---------- Sesión y perfiles (administrador y vendedor) ----------
+// El servidor es quien valida los permisos; aquí solo se ocultan las opciones que el perfil no puede usar.
+const ADMIN_ONLY_PAGES = ["proveedores.html", "reportes.html", "usuarios.html"];
+const isAdmin = () => window.USER?.role === "admin";
+
+function marcarSoloAdmin() {
+  const hide = el => el && el.classList.add("solo-admin");
+  ["new-product-btn", "product-form-panel", "tab-diferencias"].forEach(id => hide(document.getElementById(id)));
+  ["cost-form", "form-flores", "form-ramo", "form-plantas", "form-decoracion", "form-accesorio"]
+    .forEach(id => hide(document.getElementById(id)?.closest(".panel")));
+  hide(document.querySelector('[data-tab="diferencias"]'));
+  hide(document.getElementById("count-adjust")?.closest("label"));
+  // Columna de acciones de las tablas de productos y existencias
+  ["products-table", "inventory-table"].forEach(id => {
+    const table = document.getElementById(id)?.closest("table");
+    if (table) { table.classList.add("acciones-admin"); hide(table.querySelector("thead th:last-child")); }
+  });
+  document.querySelectorAll(".nav a").forEach(a => { if (ADMIN_ONLY_PAGES.includes(a.dataset.page)) hide(a); });
+}
+
+function pintarUsuario(user) {
+  document.body.classList.add(user.role === "admin" ? "rol-admin" : "rol-vendedor");
+  // Enlace a Usuarios en el menú (solo se ve para el administrador)
+  const nav = document.querySelector(".nav");
+  if (nav && !nav.querySelector('[data-page="usuarios.html"]')) {
+    nav.insertAdjacentHTML("beforeend", `<a data-page="usuarios.html" href="/paginas/usuarios.html" class="solo-admin"><span class="nav-icon">👤</span> Usuarios</a>`);
+    setActiveNav();
+  }
+  // Nombre, perfil y botón para salir en la barra superior
+  const right = document.querySelector(".top-right");
+  if (right) {
+    const initials = user.name.split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase();
+    right.innerHTML = `<div class="user-box hide-mobile"><strong>${escapeHtml(user.name)}</strong><span>${escapeHtml(user.roleLabel)}</span></div>
+      <div class="avatar" title="${escapeHtml(user.name)}">${escapeHtml(initials)}</div>
+      <button type="button" class="btn btn-secondary btn-small" id="logout-btn">Salir</button>`;
+    document.getElementById("logout-btn").addEventListener("click", async () => {
+      try { await api("/logout", { method: "POST" }); } catch { /* igual se sale */ }
+      location.href = "/paginas/login.html";
+    });
+  }
+  // El responsable del conteo es quien inició sesión
+  const responsible = document.getElementById("count-responsible");
+  if (responsible && !responsible.value) responsible.value = user.name;
+  if (new URLSearchParams(location.search).get("sinPermiso")) {
+    const content = document.querySelector(".content");
+    if (content) content.insertAdjacentHTML("afterbegin", `<div class="notice error" role="status">Esa página solo la puede abrir un administrador.</div>`);
+  }
+}
+
+window.sessionReady = (async () => {
+  marcarSoloAdmin();
+  try {
+    window.USER = await api("/me");
+    pintarUsuario(window.USER);
+  } catch { /* api() ya redirige al inicio de sesión */ }
+  return window.USER;
+})();

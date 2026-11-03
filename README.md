@@ -60,6 +60,32 @@ Al arrancar, el servidor asigna estos códigos a los productos existentes y crea
 
 **Alerta de rosas.** Cuando el stock de las rosas llega a 10 o menos (el resto de productos sigue avisando con 5 o menos) se muestra una ventana de alerta en pantalla y se envía el mensaje de WhatsApp. Indica que hay que pedir más al último proveedor que las trajo, con su nombre, la persona de contacto y el teléfono. El "último proveedor" es el de la entrada de inventario más reciente que incluya rosas; si todavía no hay entradas, el último proveedor registrado con el código ROS-001.
 
+## Inicio de sesión y perfiles (HU-16)
+Al abrir el sistema se pide usuario y contraseña. Hay dos perfiles:
+
+| Acción | Administrador | Vendedor |
+|---|:-:|:-:|
+| Resumen, dashboard y alertas de stock | Sí | Sí |
+| Consultar productos y stock | Sí | Sí |
+| Crear, editar o desactivar productos | Sí | No |
+| Proveedores y costos de compra | Sí | No |
+| Entradas de mercadería | Sí | Sí |
+| Inventario físico (contar) | Sí | Sí |
+| Ajustar el stock al conteo y ver diferencias | Sí | No |
+| Nueva venta, comprobantes e historial | Sí | Sí |
+| Reportes | Sí | No |
+| Crear y administrar usuarios (página Usuarios) | Sí | No |
+
+**Usuarios iniciales** (se crean solos la primera vez):
+- `admin` / `admin123` (Administrador)
+- `vendedor` / `vendedor123` (Vendedor)
+
+Cámbialos al entrar, en la página **Usuarios**. Para que las contraseñas iniciales no sean las de ejemplo, define las variables de entorno `ADMIN_PASSWORD` y `VENDEDOR_PASSWORD` (en el archivo `.env` o en Render) antes del primer arranque.
+
+**Seguridad.** Las contraseñas se guardan cifradas (scrypt). La sesión dura 12 horas y se guarda en una cookie HttpOnly. Los permisos se validan en el servidor: si un vendedor intenta una acción de administrador, la API responde 403. Cada venta, entrada, conteo y movimiento guarda qué usuario lo hizo.
+
+**En Render (plan gratuito).** Los datos se reinician cuando el servidor se reinicia, y con ellos los usuarios: vuelven `admin` y `vendedor` con las contraseñas de `ADMIN_PASSWORD` y `VENDEDOR_PASSWORD`. Por eso conviene definir esas dos variables en Render (Environment).
+
 ## Consulta automática de DNI y RUC
 - El RUC usa openruc.com y no necesita configuración.
 - El DNI usa apis.net.pe, que exige un token. Antes no se enviaba ninguno y por eso la consulta fallaba. Para activarla:
