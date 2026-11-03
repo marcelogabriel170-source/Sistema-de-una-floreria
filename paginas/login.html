@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="es">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#426b55">
+  <title>Iniciar sesión | Studio Floral</title>
+  <link rel="stylesheet" href="/css/estilos.css">
+</head>
+
+<body>
+  <main class="login-page">
+    <div class="login-card">
+      <div class="brand">
+        <div class="brand-mark">✿</div>
+        <div>
+          <div class="brand-name">Studio Floral</div>
+          <div class="brand-sub">Gestión floral</div>
+        </div>
+      </div>
+      <h1>Iniciar sesión</h1>
+      <p>Entra con el usuario que te dio la administradora.</p>
+      <div id="login-message"></div>
+      <form id="login-form">
+        <div class="field"><label for="login-user">Usuario</label><input id="login-user" autocomplete="username" required autofocus></div>
+        <div class="field"><label for="login-pass">Contraseña</label><input id="login-pass" type="password" autocomplete="current-password" required></div>
+        <button class="btn btn-primary" type="submit" id="login-btn">Entrar</button>
+      </form>
+    </div>
+  </main>
+  <script>
+    document.getElementById("login-form").addEventListener("submit", async e => {
+      e.preventDefault();
+      const btn = document.getElementById("login-btn"), msg = document.getElementById("login-message");
+      btn.disabled = true; msg.innerHTML = "";
+      try {
+        const res = await fetch("/api/login", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: document.getElementById("login-user").value, password: document.getElementById("login-pass").value })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "No se pudo iniciar sesión.");
+        location.href = "/paginas/index.html";
+      } catch (err) {
+        msg.innerHTML = `<div class="notice error" role="alert"></div>`;
+        msg.firstChild.textContent = err.message;
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+
+</html>

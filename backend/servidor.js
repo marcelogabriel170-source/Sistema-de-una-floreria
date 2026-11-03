@@ -22,6 +22,9 @@ const DATA_DIR = path.join(__dirname);
 const DATA_FILE = path.join(DATA_DIR, "data.json");
 
 app.use(express.json({ limit: "1mb" }));
+
+// Inicio de sesión y perfiles (administrador y vendedor). Va antes de servir las páginas.
+const auth = require("./auth")(app, { readData, writeData, id, text });
 app.use("/css", express.static(path.join(ROOT, "css")));
 app.use("/js", express.static(path.join(ROOT, "js")));
 app.use("/imagenes", express.static(path.join(ROOT, "imagenes")));
@@ -705,9 +708,15 @@ function nextCode(data, counter, prefix) {
 }
 
 // Bitácora de todo lo que mueve el stock. quantity va en positivo, salvo en los ajustes
+// Usuario que hizo la operación (nombre y usuario), para la trazabilidad
+function quien() {
+  const u = auth.currentRequestUser();
+  return u ? { id: u.id, name: u.name, username: u.username } : null;
+}
+
 function addMovement(data, movement) {
   if (!Array.isArray(data.movements)) data.movements = [];
-  data.movements.unshift({ id: id("m"), date: new Date().toISOString(), ...movement });
+  data.movements.unshift({ id: id("m"), date: new Date().toISOString(), user: quien(), ...movement });
 }
 
 function summarizeCount(count) {
@@ -790,7 +799,7 @@ app.post("/api/inventory/entries", (req, res) => {
   }
 
   const entry = {
-    id: id("e"), number, date,
+    id: id("e"), number, date, user: quien(),
     supplierId: supplier.id, supplierName: supplier.name, supplierRuc: supplier.ruc || "",
     documentRef: text(req.body.documentRef), note: text(req.body.note),
     items: entryLines,
@@ -857,7 +866,7 @@ app.post("/api/inventory/counts", (req, res) => {
   }
 
   const count = {
-    id: id("ct"), number, date: new Date().toISOString(),
+    id: id("ct"), number, date: new Date().toISOString(), user: quien(),
     responsible, note: text(req.body.note), adjusted: adjust, lines
   };
   if (!Array.isArray(data.physicalCounts)) data.physicalCounts = [];
@@ -999,6 +1008,7 @@ app.post("/api/sales", (req, res) => {
 
   const sale = {
     id: id("v"),
+    seller: quien(),
     documentType,
     documentLabel: DOCUMENT_TYPES[documentType].label,
     serie: doc.serie,
@@ -1042,6 +1052,7 @@ app.use((err, _req, res, _next) => {
 
 app.listen(PORT, () => {
   ensureDataFile();
+  try { auth.ensureUsers(); } catch (error) { console.error("No se pudieron crear los usuarios iniciales:", error.message); }
   try { migrarCodigos(); } catch (error) { console.error("No se pudieron preparar los códigos de producto:", error.message); }
   console.log(`\n🌷 Studio Floral está disponible en http://localhost:${PORT}\n`);
 });
