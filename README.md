@@ -123,8 +123,36 @@ Cámbialos al entrar, en la página **Usuarios**. Para que las contraseñas inic
 - Si la consulta no responde, la pantalla de venta avisa el motivo y se puede escribir el nombre a mano. También hay un botón Buscar para reintentar.
 - El archivo `.env` no debe subirse a ningún repositorio (ya está en `.gitignore`).
 
-## Persistencia temporal
-Los datos se guardan en `backend/data.json`, sin SQL Server ni otra base de datos. Esto permite conservar datos al reiniciar el servidor, pero es una solución temporal para desarrollo académico; no ofrece las garantías de concurrencia, seguridad y recuperación de una base de datos real. Haz copias de seguridad de ese archivo.
+## Base de datos (PostgreSQL)
+- **Con la variable `DATABASE_URL`** los datos se guardan en PostgreSQL y no se pierden aunque el servidor se reinicie (necesario en Render).
+- **Sin `DATABASE_URL`** se usa el archivo `backend/data.json`, como antes. Sirve para trabajar en la PC sin instalar nada.
+
+Las tablas se crean solas al arrancar:
+- `registros`: una fila por cada producto, venta, pedido, usuario, movimiento, etc. (`coleccion`, `id`, `datos` en JSONB).
+- `ajustes`: valores sueltos como los correlativos de boletas y la configuración del emisor.
+
+Ejemplo de consulta: `SELECT datos->>'name', datos->>'stock' FROM registros WHERE coleccion = 'products';`
+
+Si la base está vacía y existe un `backend/data.json`, sus datos se importan automáticamente la primera vez. Al apagar el servidor (Render envía SIGTERM) se termina de guardar lo pendiente. `GET /api/health` indica dónde se guardan los datos y si hubo algún error al guardar.
+
+### Configurarla en Render (gratis)
+1. Crea una base PostgreSQL gratuita, por ejemplo en [Neon](https://neon.tech) (no vence). Render también ofrece PostgreSQL gratis, pero la base gratuita de Render se borra al cumplir un tiempo; revisa sus condiciones antes de usarla.
+2. Copia la cadena de conexión (empieza con `postgresql://` y termina en `?sslmode=require`).
+3. En Render › tu servicio › Environment agrega `DATABASE_URL` con esa cadena y vuelve a desplegar.
+
+## Límite de intentos de inicio de sesión
+Tras 5 contraseñas incorrectas seguidas para un mismo usuario desde la misma conexión, ese usuario queda bloqueado 5 minutos desde ahí (aunque luego escriba la contraseña correcta). Una conexión con 20 fallos en 15 minutos se bloquea 15 minutos para todos los usuarios. Al entrar bien se reinicia el contador. Se puede ajustar con `LOGIN_MAX_INTENTOS` y `LOGIN_BLOQUEO_MINUTOS`.
+
+## Pruebas automáticas (Jest y Supertest)
+```bash
+npm test
+```
+Corre 56 pruebas sobre la API en `tests/`: inicio de sesión y permisos, límite de intentos, inventario (casos CP-12 a CP-22 del informe), merma y tallos sueltos, ventas y recetas, anulación, reportes, pedidos, proveedores y la base de datos. Cada archivo usa datos nuevos en una carpeta temporal, así que no toca tus datos.
+
+Las pruebas de PostgreSQL solo corren si indicas una base de datos **de pruebas** (se vacía en cada ejecución):
+```bash
+TEST_DATABASE_URL=postgres://usuario:clave@localhost:5432/floreria_test npm test
+```
 
 ## Estructura
 - `backend/servidor.js`: API REST y servicio web.

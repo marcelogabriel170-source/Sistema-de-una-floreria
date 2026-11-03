@@ -50,9 +50,47 @@ function setSessionCookie(req, res, token, maxAgeSeconds) {
     `${COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure ? "; Secure" : ""}`);
 }
 
+// ---- Límite de intentos de inicio de sesión ----
+// 5 intentos fallidos seguidos (misma IP y mismo usuario) bloquean ese usuario desde esa IP por 5 minutos.
+// Además, una IP con 20 fallos en 15 minutos queda bloqueada para cualquier usuario por 15 minutos.
+const MAX_INTENTOS = Number(process.env.LOGIN_MAX_INTENTOS) || 5;
+const BLOQUEO_MS = (Number(process.env.LOGIN_BLOQUEO_MINUTOS) || 5) * 60 * 1000;
+const MAX_POR_IP = 20, VENTANA_IP_MS = 15 * 60 * 1000;
+const intentos = new Map(); // "ip|usuario" → { fallos, bloqueadoHasta }
+const intentosIp = new Map(); // ip → { fallos: [fechas], bloqueadoHasta }
+
+function bloqueoRestante(ip, username) {
+  const ahora = Date.now();
+  const porIp = intentosIp.get(ip);
+  const a = intentos.get(ip + "|" + username);
+  const hasta = Math.max(porIp?.bloqueadoHasta || 0, a?.bloqueadoHasta || 0);
+  return hasta > ahora ? hasta - ahora : 0;
+}
+function registrarFallo(ip, username) {
+  const ahora = Date.now();
+  const k = ip + "|" + username;
+  const a = intentos.get(k) || { fallos: 0, bloqueadoHasta: 0 };
+  if (a.bloqueadoHasta && a.bloqueadoHasta <= ahora) { a.fallos = 0; a.bloqueadoHasta = 0; }
+  a.fallos += 1;
+  if (a.fallos >= MAX_INTENTOS) a.bloqueadoHasta = ahora + BLOQUEO_MS;
+  intentos.set(k, a);
+  const p = intentosIp.get(ip) || { fallos: [], bloqueadoHasta: 0 };
+  p.fallos = p.fallos.filter(t => t > ahora - VENTANA_IP_MS).concat(ahora);
+  if (p.fallos.length >= MAX_POR_IP) p.bloqueadoHasta = ahora + VENTANA_IP_MS;
+  intentosIp.set(ip, p);
+  return { restantes: Math.max(0, MAX_INTENTOS - a.fallos), bloqueado: bloqueoRestante(ip, username) };
+}
+const minutos = ms => Math.max(1, Math.ceil(ms / 60000));
+// Limpieza periódica para que la memoria no crezca
+setInterval(() => {
+  const ahora = Date.now();
+  for (const [k, a] of intentos) if (a.bloqueadoHasta < ahora) intentos.delete(k); // los fallos sueltos se olvidan a los 10 min
+  for (const [k, p] of intentosIp) if (p.bloqueadoHasta < ahora && !p.fallos.some(t => t > ahora - VENTANA_IP_MS)) intentosIp.delete(k);
+}, 10 * 60 * 1000).unref();
+
 function validPassword(p) { return typeof p === "string" && p.length >= 6 && p.length <= 100; }
 
-module.exports = function setupAuth(app, { readData, writeData, id, text }) {
+module.exports = function setupAuth(app, { readData, writeData, id, text, estadoAlmacenamiento }) {
   // Crea los usuarios iniciales si no existen (cambia sus contraseñas al entrar por primera vez)
   function ensureUsers() {
     const data = readData();
@@ -70,7 +108,7 @@ module.exports = function setupAuth(app, { readData, writeData, id, text }) {
         passwordHash: hashPassword(process.env.VENDEDOR_PASSWORD || "vendedor123"), createdAt: now });
     }
     writeData(data);
-    console.log("👤 Usuarios iniciales creados: admin y vendedor (cambia sus contraseñas en la página Usuarios).");
+    if (process.env.NODE_ENV !== "test") console.log("👤 Usuarios iniciales creados: admin y vendedor (cambia sus contraseñas en la página Usuarios).");
   }
 
   function currentUser(req) {
@@ -104,10 +142,22 @@ module.exports = function setupAuth(app, { readData, writeData, id, text }) {
     const username = text(req.body.username).toLowerCase();
     const password = typeof req.body.password === "string" ? req.body.password : "";
     if (!username || !password) return res.status(400).json({ error: "Escribe tu usuario y tu contraseña." });
+    const ip = req.ip || "desconocida";
+    const espera = bloqueoRestante(ip, username);
+    if (espera) {
+      res.setHeader("Retry-After", Math.ceil(espera / 1000));
+      return res.status(429).json({ error: `Demasiados intentos fallidos. Espera ${minutos(espera)} minuto${minutos(espera) === 1 ? "" : "s"} y vuelve a intentarlo.` });
+    }
     const u = (readData().users || []).find(x => x.username === username);
     if (!u || !u.active || !verifyPassword(password, u.passwordHash)) {
-      return res.status(401).json({ error: "Usuario o contraseña incorrectos." });
+      const r = registrarFallo(ip, username);
+      if (r.bloqueado) {
+        res.setHeader("Retry-After", Math.ceil(r.bloqueado / 1000));
+        return res.status(429).json({ error: `Demasiados intentos fallidos. Espera ${minutos(r.bloqueado)} minuto${minutos(r.bloqueado) === 1 ? "" : "s"} y vuelve a intentarlo.` });
+      }
+      return res.status(401).json({ error: `Usuario o contraseña incorrectos.${r.restantes <= 2 ? ` Te queda${r.restantes === 1 ? "" : "n"} ${r.restantes} intento${r.restantes === 1 ? "" : "s"} antes del bloqueo.` : ""}` });
     }
+    intentos.delete(ip + "|" + username); // al entrar bien se reinicia el contador
     const token = crypto.randomBytes(32).toString("hex");
     sessions.set(token, { userId: u.id, expires: Date.now() + SESSION_HOURS * 3600 * 1000 });
     setSessionCookie(req, res, token, SESSION_HOURS * 3600);
@@ -120,7 +170,10 @@ module.exports = function setupAuth(app, { readData, writeData, id, text }) {
     res.json({ ok: true });
   });
 
-  app.get("/api/health", (_req, res) => res.json({ ok: true, app: "Studio Floral", storage: "JSON local" }));
+  app.get("/api/health", (_req, res) => {
+    const e = estadoAlmacenamiento ? estadoAlmacenamiento() : { tipo: "JSON local", error: null };
+    res.status(e.error ? 503 : 200).json({ ok: !e.error, app: "Studio Floral", storage: e.tipo, pendiente: Boolean(e.pendiente), error: e.error || undefined });
+  });
 
   // ---- Toda la API exige sesión ----
   app.use("/api", (req, res, next) => {

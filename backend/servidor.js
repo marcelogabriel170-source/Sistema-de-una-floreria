@@ -18,13 +18,18 @@ const qrcode = require('qrcode-terminal');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const ROOT = path.resolve(__dirname, "..");
-const DATA_DIR = path.join(__dirname);
-const DATA_FILE = path.join(DATA_DIR, "data.json");
+// Archivo de datos cuando no hay base de datos (se puede cambiar con DATA_FILE, por ejemplo en las pruebas)
+const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, "data.json");
 
+// Render (y otros servicios) pasan la IP real del cliente en X-Forwarded-For: se usa para limitar intentos de login
+app.set("trust proxy", 1);
 app.use(express.json({ limit: "1mb" }));
 
+// Dónde se guardan los datos: PostgreSQL si hay DATABASE_URL; si no, el archivo JSON
+const storage = require("./almacenamiento")({ archivo: DATA_FILE, url: process.env.DATABASE_URL, initialData });
+
 // Inicio de sesión y perfiles (administrador y vendedor). Va antes de servir las páginas.
-const auth = require("./auth")(app, { readData, writeData, id, text });
+const auth = require("./auth")(app, { readData, writeData, id, text, estadoAlmacenamiento: () => storage.estado() });
 app.use("/css", express.static(path.join(ROOT, "css")));
 app.use("/js", express.static(path.join(ROOT, "js")));
 app.use("/imagenes", express.static(path.join(ROOT, "imagenes")));
@@ -47,7 +52,7 @@ whatsappClient.on('ready', () => {
 });
 
 // Con WHATSAPP_DESACTIVADO=1 el servidor arranca sin abrir WhatsApp (útil para pruebas)
-if (process.env.WHATSAPP_DESACTIVADO !== "1") {
+if (process.env.WHATSAPP_DESACTIVADO !== "1" && process.env.NODE_ENV !== "test") {
   whatsappClient.initialize().catch(error => console.error("No se pudo iniciar WhatsApp:", error.message));
 }
 
@@ -121,6 +126,8 @@ function alertasDeStock(data) {
 // FUNCIÓN DE ALERTA DE STOCK BAJO
 // ==========================================
 async function enviarAlertaStockBajo(product, data) {
+  // Sin WhatsApp (desactivado o en pruebas) el aviso se ve solo en pantalla
+  if (process.env.WHATSAPP_DESACTIVADO === "1" || process.env.NODE_ENV === "test") return;
   try {
     // Configura tu número con código de país y el sufijo '@c.us' (Ejemplo Perú: 51)
     const tuNumero = "51913162053@c.us";
@@ -173,20 +180,8 @@ function initialData() {
   };
 }
 
-function ensureDataFile() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify(initialData(), null, 2), "utf8");
-}
-
-function readData() {
-  ensureDataFile();
-  try {
-    return JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
-  } catch (error) {
-    console.error("No se pudo leer data.json:", error.message);
-    throw new Error("El archivo de datos no es válido. Haz una copia y revisa backend/data.json.");
-  }
-}
+// Lectura y escritura de datos (ver backend/almacenamiento.js)
+function readData() { return storage.read(); }
 
 // Al arrancar: asigna el código a los productos que ya existen, crea los que falten
 // y completa el código de los proveedores antiguos a partir de lo que ya tenían asociado.
@@ -225,11 +220,7 @@ function migrarCodigos() {
   if (changed) writeData(data);
 }
 
-function writeData(data) {
-  const temp = DATA_FILE + ".tmp";
-  fs.writeFileSync(temp, JSON.stringify(data, null, 2), "utf8");
-  fs.renameSync(temp, DATA_FILE);
-}
+function writeData(data) { storage.write(data); }
 
 function id(prefix) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -984,9 +975,32 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: "Error interno del servidor. Revisa la terminal para más información." });
 });
 
-app.listen(PORT, () => {
-  ensureDataFile();
+// Prepara los datos (conecta con la base de datos, crea los usuarios iniciales y los códigos)
+async function iniciar() {
+  await storage.init();
   try { auth.ensureUsers(); } catch (error) { console.error("No se pudieron crear los usuarios iniciales:", error.message); }
   try { migrarCodigos(); } catch (error) { console.error("No se pudieron preparar los códigos de producto:", error.message); }
-  console.log(`\n🌷 Studio Floral está disponible en http://localhost:${PORT}\n`);
-});
+}
+
+module.exports = { app, iniciar, storage };
+
+// Con «npm start» se arranca el servidor; en las pruebas solo se usa la app
+if (require.main === module) {
+  iniciar().then(() => {
+    const server = app.listen(PORT, () => {
+      console.log(`\n🌷 Studio Floral está disponible en http://localhost:${PORT} (datos: ${storage.tipo})\n`);
+    });
+    // Al apagar (Render envía SIGTERM) se termina de guardar lo pendiente
+    const apagar = async () => {
+      server.close();
+      try { await storage.flush(); await storage.close(); } catch (error) { console.error("Error al cerrar:", error.message); }
+      process.exit(0);
+    };
+    process.on("SIGTERM", apagar);
+    process.on("SIGINT", apagar);
+  }).catch(error => {
+    console.error("❌ No se pudo iniciar el sistema:", error.message);
+    if (process.env.DATABASE_URL) console.error("Revisa DATABASE_URL (servidor, usuario, contraseña y que la base exista).");
+    process.exit(1);
+  });
+}
