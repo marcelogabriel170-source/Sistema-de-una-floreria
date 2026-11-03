@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="es">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#426b55">
+  <title>Inventario | Studio Floral</title>
+  <link rel="stylesheet" href="/css/estilos.css">
+</head>
+
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="/paginas/index.html">
+        <div class="brand-mark">✿</div>
+        <div>
+          <div class="brand-name">Studio Floral</div>
+          <div class="brand-sub">Gestión floral</div>
+        </div>
+      </a>
+      <div>
+        <div class="nav-label">Espacio de trabajo</div>
+        <nav class="nav">
+          <a data-page="index.html" href="/paginas/index.html"><span class="nav-icon">⌂</span> Resumen</a>
+          <a data-page="catalogo.html" href="/paginas/catalogo.html"><span class="nav-icon">✿</span> Todos los
+            productos</a>
+          <a data-page="ramos.html" href="/paginas/ramos.html"><span class="nav-icon">💐</span> Catálogo de ramos</a>
+          <a data-page="flores.html" href="/paginas/flores.html"><span class="nav-icon">🌹</span> Catálogo de flores</a>
+          <a data-page="plantas.html" href="/paginas/plantas.html"><span class="nav-icon">🪴</span> Catálogo de
+            plantas</a>
+          <a data-page="decoracion.html" href="/paginas/decoracion.html"><span class="nav-icon">🎀</span> Decoración</a>
+          <a data-page="accesorios.html" href="/paginas/accesorios.html"><span class="nav-icon">🏺</span> Accesorios</a>
+          <a data-page="proveedores.html" href="/paginas/proveedores.html"><span class="nav-icon">♧</span>
+            Proveedores</a>
+          <a data-page="inventario.html" href="/paginas/inventario.html"><span class="nav-icon">▤</span> Inventario</a>
+          <a data-page="nueva-venta.html" href="/paginas/nueva-venta.html"><span class="nav-icon">＋</span> Nueva
+            venta</a>
+          <a data-page="ticket.html" href="/paginas/ticket.html"><span class="nav-icon">◧</span> Comprobantes</a>
+          <a data-page="dashboard.html" href="/paginas/dashboard.html"><span class="nav-icon">◫</span> Dashboard</a>
+          <a data-page="reportes.html" href="/paginas/reportes.html"><span class="nav-icon">▥</span> Reportes</a>
+        </nav>
+      </div>
+      <div class="sidebar-bottom"><strong>✧ Un detalle natural</strong><br>Cuida cada flor, cada pedido y cada cliente.
+      </div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div class="crumb">Studio Floral <span style="color:#b9c0b8"> / </span> <span id="breadcrumb">Resumen</span>
+        </div>
+        <div class="top-right"><span class="muted hide-mobile">Panel de administración</span>
+          <div class="avatar">SF</div>
+        </div>
+      </header>
+      <div class="content">
+        <div class="page-heading">
+          <div>
+            <div class="eyebrow">Control operativo</div>
+            <h1>Inventario</h1>
+            <p>Consulta existencias, registra lo que llega de los proveedores, cuenta el stock real y revisa las
+              diferencias contra el sistema.</p>
+          </div><a class="btn btn-primary" href="/paginas/catalogo.html">＋ Gestionar productos</a>
+        </div>
+
+        <div class="tabs" role="tablist">
+          <button class="tab active" role="tab" data-tab="existencias" type="button">Existencias</button>
+          <button class="tab" role="tab" data-tab="entradas" type="button">Entradas</button>
+          <button class="tab" role="tab" data-tab="fisico" type="button">Inventario físico</button>
+          <button class="tab" role="tab" data-tab="diferencias" type="button">Diferencias</button>
+          <button class="tab" role="tab" data-tab="movimientos" type="button">Movimientos</button>
+        </div>
+
+        <div id="inv-message"></div>
+
+        <!-- Existencias -->
+        <section id="tab-existencias" data-section="existencias">
+          <div class="cards" id="inventory-stats"></div>
+          <div class="panel">
+            <div class="panel-head">
+              <div>
+                <div class="panel-title">Estado de existencias</div>
+                <div class="panel-subtitle">El umbral de aviso es de 5 paquetes.</div>
+              </div>
+              <div class="search"><input id="inventory-search" placeholder="Buscar producto…"></div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th>Categoría</th>
+                    <th>Stock actual</th>
+                    <th>Indicador</th>
+                    <th>Acción</th>
+                  </tr>
+                </thead>
+                <tbody id="inventory-table">
+                  <tr><td colspan="5" class="empty">Cargando…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- Entradas de productos -->
+        <section id="tab-entradas" data-section="entradas" class="hidden">
+          <div class="split">
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <div class="panel-title">Registrar entrada</div>
+                  <div class="panel-subtitle">Los productos salen del código de producto que tiene el proveedor.</div>
+                </div>
+              </div>
+              <form id="entry-form">
+                <div class="field">
+                  <label for="entry-supplier">Proveedor *</label>
+                  <select id="entry-supplier" required>
+                    <option value="">Selecciona proveedor</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="entry-doc">Documento del proveedor</label>
+                  <input id="entry-doc" maxlength="60" placeholder="Factura o guía, ej. F001-00123">
+                </div>
+                <div class="field">
+                  <label for="entry-note">Observaciones</label>
+                  <textarea id="entry-note" maxlength="300" placeholder="Opcional"></textarea>
+                </div>
+                <div class="field">
+                  <label>Productos recibidos *</label>
+                  <div class="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Producto</th>
+                          <th>Stock</th>
+                          <th>Cantidad</th>
+                          <th>Costo unit.</th>
+                        </tr>
+                      </thead>
+                      <tbody id="entry-products">
+                        <tr><td colspan="4" class="empty">Elige un proveedor para ver sus productos.</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <small class="muted">Deja la cantidad en blanco en lo que no llegó. El costo es opcional y se guarda
+                    en el historial de costos.</small>
+                </div>
+                <button id="entry-submit" class="btn btn-primary" type="submit" style="width:100%">Registrar entrada</button>
+              </form>
+            </div>
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <div class="panel-title">Entradas registradas</div>
+                  <div class="panel-subtitle">Las más recientes primero.</div>
+                </div>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>N°</th>
+                      <th>Fecha</th>
+                      <th>Proveedor</th>
+                      <th>Unidades</th>
+                      <th>Costo total</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="entries-table">
+                    <tr><td colspan="6" class="empty">Cargando…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Inventario físico -->
+        <section id="tab-fisico" data-section="fisico" class="hidden">
+          <div class="panel">
+            <div class="panel-head">
+              <div>
+                <div class="panel-title">Nuevo inventario físico</div>
+                <div class="panel-subtitle">Anota lo que realmente hay en tienda. Lo que dejes en blanco no se cuenta.</div>
+              </div>
+              <div class="search"><input id="count-search" placeholder="Buscar producto…"></div>
+            </div>
+            <form id="count-form">
+              <div class="form-grid">
+                <div class="field">
+                  <label for="count-responsible">Responsable del conteo *</label>
+                  <input id="count-responsible" maxlength="80" required placeholder="Nombre de quien cuenta">
+                </div>
+                <div class="field">
+                  <label for="count-note">Observaciones</label>
+                  <input id="count-note" maxlength="300" placeholder="Opcional">
+                </div>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Producto</th>
+                      <th>Categoría</th>
+                      <th>Stock sistema</th>
+                      <th>Conteo físico</th>
+                      <th>Diferencia</th>
+                    </tr>
+                  </thead>
+                  <tbody id="count-table">
+                    <tr><td colspan="5" class="empty">Cargando…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <label class="check-line">
+                <input type="checkbox" id="count-adjust">
+                <span>Ajustar el stock del sistema a lo contado. Si no lo marcas, el conteo solo se guarda para
+                  revisar las diferencias.</span>
+              </label>
+              <div class="form-actions">
+                <button class="btn btn-primary" type="submit" id="count-submit">Guardar inventario físico</button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <!-- Diferencias -->
+        <section id="tab-diferencias" data-section="diferencias" class="hidden">
+          <div class="panel">
+            <div class="panel-head">
+              <div>
+                <div class="panel-title">Diferencias de inventario</div>
+                <div class="panel-subtitle">Compara el conteo físico con el stock que tenía el sistema al contar.</div>
+              </div>
+              <div class="toolbar">
+                <select id="diff-count" aria-label="Inventario físico"></select>
+                <select id="diff-filter" aria-label="Filtro">
+                  <option value="all">Todos los productos</option>
+                  <option value="diff">Solo con diferencia</option>
+                  <option value="short">Solo faltantes</option>
+                  <option value="over">Solo sobrantes</option>
+                </select>
+              </div>
+            </div>
+            <div id="diff-info" class="muted" style="margin:-6px 0 16px"></div>
+            <div class="cards five" id="diff-stats"></div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th>Stock sistema</th>
+                    <th>Conteo físico</th>
+                    <th>Diferencia</th>
+                    <th>Valor</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody id="diff-table">
+                  <tr><td colspan="6" class="empty">Cargando…</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <small class="muted">El valor usa el último costo registrado del producto y, si no tiene, su precio de venta.</small>
+          </div>
+        </section>
+
+        <!-- Movimientos -->
+        <section id="tab-movimientos" data-section="movimientos" class="hidden">
+          <div class="panel">
+            <div class="panel-head">
+              <div>
+                <div class="panel-title">Movimientos de stock</div>
+                <div class="panel-subtitle">Entradas, salidas por venta y ajustes. Se muestran los últimos 300.</div>
+              </div>
+              <div class="toolbar">
+                <select id="move-type" aria-label="Tipo de movimiento">
+                  <option value="">Todos</option>
+                  <option value="entrada">Entradas</option>
+                  <option value="salida">Salidas</option>
+                  <option value="ajuste">Ajustes</option>
+                </select>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Tipo</th>
+                    <th>Producto</th>
+                    <th>Cantidad</th>
+                    <th>Stock</th>
+                    <th>Referencia</th>
+                    <th>Detalle</th>
+                  </tr>
+                </thead>
+                <tbody id="move-table">
+                  <tr><td colspan="7" class="empty">Cargando…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+        <div class="footer-note">Studio Floral · Sistema de gestión · Datos guardados localmente</div>
+      </div>
+    </main>
+  </div>
+  <script>window.PAGE_NAME = "inventario.html";</script>
+  <script src="/js/app.js"></script>
+  <script src="/js/inventario.js"></script>
+</body>
+
+</html>
