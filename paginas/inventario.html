@@ -80,7 +80,7 @@
             <div class="panel-head">
               <div>
                 <div class="panel-title">Estado de existencias</div>
-                <div class="panel-subtitle">El umbral de aviso es de 5 paquetes.</div>
+                <div class="panel-subtitle">Cada producto avisa al llegar a su stock mínimo (se define en Productos). Los arreglos con receta no aparecen: usan el stock de sus insumos.</div>
               </div>
               <div class="search"><input id="inventory-search" placeholder="Buscar producto…"></div>
             </div>
@@ -92,11 +92,12 @@
                     <th>Categoría</th>
                     <th>Stock actual</th>
                     <th>Indicador</th>
+                    <th>Tallos sueltos</th>
                     <th>Acción</th>
                   </tr>
                 </thead>
                 <tbody id="inventory-table">
-                  <tr><td colspan="5" class="empty">Cargando…</td></tr>
+                  <tr><td colspan="6" class="empty">Cargando…</td></tr>
                 </tbody>
               </table>
             </div>
@@ -244,8 +245,14 @@
                   <select id="waste-product" required></select>
                 </div>
                 <div class="field">
-                  <label for="waste-qty">Cantidad (paquetes) *</label>
-                  <input id="waste-qty" type="number" min="1" step="1" required placeholder="Ej. 1">
+                  <label for="waste-qty">Cantidad *</label>
+                  <div style="display:flex;gap:8px">
+                    <input id="waste-qty" type="number" min="1" step="1" required placeholder="Ej. 1">
+                    <select id="waste-unit" aria-label="Unidad" style="max-width:150px">
+                      <option value="paquete">paquetes</option>
+                      <option value="tallo">tallos sueltos</option>
+                    </select>
+                  </div>
                 </div>
                 <div class="field">
                   <label for="waste-reason">Motivo *</label>
@@ -352,6 +359,7 @@
                   <option value="ajuste">Ajustes</option>
                   <option value="merma">Merma</option>
                   <option value="devolucion">Devoluciones por anulación</option>
+                  <option value="apertura">Paquetes abiertos</option>
                 </select>
               </div>
             </div>

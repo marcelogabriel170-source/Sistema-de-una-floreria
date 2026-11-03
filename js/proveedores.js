@@ -58,7 +58,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   const openForm = () => { formPanel.classList.remove("hidden"); document.getElementById("supplier-name").focus(); };
-  const closeForm = () => { form.reset(); document.getElementById("supplier-id").value = ""; document.getElementById("supplier-form-title").textContent = "Registrar proveedor"; formPanel.classList.add("hidden"); updateCodeHint(); };
+  const closeForm = () => { form.reset(); document.getElementById("supplier-id").value = ""; document.getElementById("supplier-form-title").textContent = "Registrar proveedor"; formPanel.classList.add("hidden"); fillCodes([]); };
   document.getElementById("new-supplier-btn").addEventListener("click", () => { closeForm(); openForm(); });
   ["close-supplier-form", "cancel-supplier"].forEach(id => document.getElementById(id).addEventListener("click", closeForm));
   document.getElementById("supplier-search").addEventListener("input", renderSuppliers);
@@ -70,9 +70,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   function renderSuppliers() {
     const q = document.getElementById("supplier-search").value.toLowerCase();
-    const list = suppliers.filter(s => [s.ruc, s.name, s.contact, s.phone, s.email, s.productCode].some(v => String(v || "").toLowerCase().includes(q)));
+    const list = suppliers.filter(s => [s.ruc, s.name, s.contact, s.phone, s.email, ...supplierCodes(s), ...supplierCodes(s).map(productNameByCode)].some(v => String(v || "").toLowerCase().includes(q)));
     const target = document.getElementById("suppliers-list");
-    target.innerHTML = list.length ? list.map(s => `<div style="padding:14px 0;border-bottom:1px solid #f0f1ed"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><strong>${escapeHtml(s.name)}</strong> <span class="badge ${s.active ? "" : "inactive"}">${s.active ? "Activo" : "Inactivo"}</span><div class="muted">${escapeHtml(s.contact)}</div>${s.productCode ? `<div class="muted">Código: <strong>${escapeHtml(s.productCode)}</strong> · ${escapeHtml(productNameByCode(s.productCode))}</div>` : `<div class="muted" style="color:#a23e37">Sin código de producto: edítalo para asignarle uno.</div>`}</div><div class="row-actions">${s.active ? `<button class="btn btn-secondary btn-small" data-supplier-edit="${s.id}">Editar</button>` : ""}<button class="btn ${s.active ? "btn-danger" : "btn-secondary"} btn-small" data-supplier-toggle="${s.id}" data-active="${!s.active}">${s.active ? "Desactivar" : "Activar"}</button></div></div><div class="muted" style="margin-top:8px">☎ ${escapeHtml(s.phone)} · ✉ ${escapeHtml(s.email)}</div>${s.notes ? `<div class="muted">${escapeHtml(s.notes)}</div>` : ""}</div>`).join("") : `<div class="empty">No hay proveedores para mostrar.</div>`;
+    target.innerHTML = list.length ? list.map(s => `<div style="padding:14px 0;border-bottom:1px solid #f0f1ed"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><strong>${escapeHtml(s.name)}</strong> <span class="badge ${s.active ? "" : "inactive"}">${s.active ? "Activo" : "Inactivo"}</span><div class="muted">${escapeHtml(s.contact)}</div>${supplierCodes(s).length ? `<div class="muted">Abastece: ${supplierCodes(s).map(c => `<strong>${escapeHtml(c)}</strong> ${escapeHtml(productNameByCode(c))}`).join(" · ")}</div>` : `<div class="muted" style="color:#a23e37">Sin productos asignados: edítalo para elegirlos.</div>`}</div><div class="row-actions">${s.active ? `<button class="btn btn-secondary btn-small" data-supplier-edit="${s.id}">Editar</button>` : ""}<button class="btn ${s.active ? "btn-danger" : "btn-secondary"} btn-small" data-supplier-toggle="${s.id}" data-active="${!s.active}">${s.active ? "Desactivar" : "Activar"}</button></div></div><div class="muted" style="margin-top:8px">☎ ${escapeHtml(s.phone)} · ✉ ${escapeHtml(s.email)}</div>${s.notes ? `<div class="muted">${escapeHtml(s.notes)}</div>` : ""}</div>`).join("") : `<div class="empty">No hay proveedores para mostrar.</div>`;
   }
   document.getElementById("suppliers-list").addEventListener("click", async e => {
     const edit = e.target.closest("[data-supplier-edit]"), toggle = e.target.closest("[data-supplier-toggle]");
@@ -80,7 +80,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const s = suppliers.find(x => x.id === edit.dataset.supplierEdit); if (!s) return;
       document.getElementById("supplier-id").value = s.id;
       ["ruc", "name", "address", "status", "condition", "contact", "phone", "email", "notes"].forEach(key => document.getElementById(`supplier-${key}`).value = s[key] || "");
-      codeInput.value = s.productCode || ""; updateCodeHint();
+      fillCodes(supplierCodes(s));
       document.getElementById("supplier-form-title").textContent = "Editar proveedor"; openForm(); window.scrollTo({ top: 0, behavior: "smooth" });
     }
     if (toggle) {
@@ -109,30 +109,29 @@ document.addEventListener("DOMContentLoaded", () => {
       const field = document.getElementById(`supplier-${key}`);
       payload[key] = field ? field.value.trim() : "";
     });
-    payload.productCode = codeInput.value.trim().toUpperCase();
+    payload.productCodes = checkedCodes();
+    if (!payload.productCodes.length) return showMessage("supplier-message", "Marca al menos un producto que abastece este proveedor.", "error");
     try { await api(id ? `/suppliers/${id}` : "/suppliers", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }); closeForm(); showMessage("supplier-message", id ? "Proveedor actualizado." : "Proveedor registrado."); await loadAll(); }
     catch (err) { showMessage("supplier-message", err.message, "error"); }
   });
-  // ---- Código de producto del proveedor ----
-  const codeInput = document.getElementById("supplier-code");
+  // ---- Productos que abastece el proveedor (por código) ----
+  const codesBox = document.getElementById("supplier-code-chips");
   const codeHint = document.getElementById("supplier-code-hint");
   const productNameByCode = code => (codes.find(c => c.code === code) || {}).name || "producto no encontrado";
+  const supplierCodes = s => Array.isArray(s.productCodes) ? s.productCodes : (s.productCode ? [s.productCode] : []);
+  const checkedCodes = () => [...codesBox.querySelectorAll("input:checked")].map(i => i.value);
   function updateCodeHint() {
-    const value = codeInput.value.trim().toUpperCase();
-    const found = codes.find(c => c.code === value);
-    if (!value) { codeHint.style.color = ""; codeHint.textContent = "Escribe el código del producto que te vende este proveedor."; return; }
-    codeHint.style.color = found ? "#2e6a40" : "#a23e37";
-    codeHint.textContent = found ? `✓ ${found.code} → ${found.name} (${found.category})` : "Ese código no existe. Elige uno de la lista.";
+    const n = checkedCodes().length;
+    codeHint.style.color = n ? "#2e6a40" : "";
+    codeHint.textContent = n ? `✓ ${n} producto${n === 1 ? "" : "s"} seleccionado${n === 1 ? "" : "s"}.` : "Marca todos los productos que te vende este proveedor. Los códigos se crean en Productos.";
   }
-  function fillCodes() {
-    document.getElementById("product-codes").innerHTML = codes.map(c => `<option value="${escapeHtml(c.code)}">${escapeHtml(c.name)}</option>`).join("");
-    document.getElementById("supplier-code-chips").innerHTML = codes.map(c => `<button type="button" class="btn btn-secondary btn-small" data-code="${escapeHtml(c.code)}">${escapeHtml(c.code)} · ${escapeHtml(c.name)}</button>`).join("");
+  function fillCodes(selected = checkedCodes()) {
+    codesBox.innerHTML = codes.length ? codes.map(c => `<label class="code-check${c.active ? "" : " inactive"}">
+        <input type="checkbox" value="${escapeHtml(c.code)}" ${selected.includes(c.code) ? "checked" : ""} ${c.active ? "" : "disabled"}>
+        <span><strong>${escapeHtml(c.code)}</strong> · ${escapeHtml(c.name)}</span></label>`).join("")
+      : `<div class="muted">Todavía no hay productos con código. Créalos en <a href="/paginas/catalogo.html" style="text-decoration:underline">Productos</a>.</div>`;
     updateCodeHint();
   }
-  codeInput.addEventListener("input", () => { codeInput.value = codeInput.value.toUpperCase(); updateCodeHint(); });
-  document.getElementById("supplier-code-chips").addEventListener("click", e => {
-    const chip = e.target.closest("[data-code]"); if (!chip) return;
-    codeInput.value = chip.dataset.code; updateCodeHint();
-  });
+  codesBox.addEventListener("change", updateCodeHint);
   loadAll();
 });

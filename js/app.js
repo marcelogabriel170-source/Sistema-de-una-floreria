@@ -37,41 +37,54 @@ function productIcon(category) {
 }
 document.addEventListener("DOMContentLoaded", setActiveNav);
 
-// ---------- Stock mínimo y alerta de rosas ----------
-// Stock mínimo general: 5. Las rosas avisan antes: con 10 o menos hay que pedir más.
+// ---------- Stock mínimo y avisos al entrar ----------
+// Cada producto tiene su stock mínimo (Productos). Si no se definió: 10 para rosas y 5 para el resto.
 const STOCK_MINIMO = 5, STOCK_MINIMO_ROSAS = 10;
 const esRosa = p => p.code === "ROS-001" || /^rosas?\b/.test(String(p.name || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim());
-const stockMinimo = p => esRosa(p) ? STOCK_MINIMO_ROSAS : STOCK_MINIMO;
+const stockMinimo = p => Number.isInteger(p.minStockEfectivo) ? p.minStockEfectivo
+  : Number.isInteger(p.minStock) ? p.minStock : esRosa(p) ? STOCK_MINIMO_ROSAS : STOCK_MINIMO;
+const fechaLimaHoy = () => new Date(Date.now() - 5 * 3600e3).toISOString().slice(0, 10);
 
-// Ventana de alerta: dice cuántas rosas quedan y a qué proveedor pedir (nombre y teléfono)
-async function mostrarAlertasStock() {
-  let alerts;
-  try { alerts = await api("/alerts/stock"); } catch { return; }
-  if (!Array.isArray(alerts) || !alerts.length) return;
+// Ventana de avisos: productos en su stock mínimo (con el proveedor a llamar) y pedidos para hoy o atrasados
+async function mostrarAvisos() {
+  if (location.pathname.endsWith("/login.html")) return;
+  const [alerts, orders] = await Promise.all([api("/alerts/stock").catch(() => []), api("/orders").catch(() => [])]);
+  const hoy = fechaLimaHoy();
+  const activos = (orders || []).filter(o => ["pendiente", "preparacion"].includes(o.status) && o.deliveryDate <= hoy)
+    .sort((a, b) => (a.deliveryDate + (a.deliveryTime || "")).localeCompare(b.deliveryDate + (b.deliveryTime || "")));
+  if (!alerts.length && !activos.length) return;
 
-  // Se vuelve a mostrar cuando cambia el stock (por ejemplo, después de otra venta)
-  const key = "alertaStock:" + alerts.map(a => `${a.productId}:${a.stock}`).join("|");
+  // Se vuelve a mostrar cuando cambia algo (otra venta, otro pedido) o al día siguiente
+  const key = "avisos:" + hoy + ":" + alerts.map(a => `${a.productId}:${a.stock}`).join("|") + ":" + activos.map(o => o.id + o.status).join("|");
   try { if (sessionStorage.getItem(key)) return; } catch { /* sin sessionStorage: se muestra siempre */ }
+
+  const tel = s => String(s?.phone || "").replace(/[^\d+]/g, "");
+  const stockHtml = alerts.length ? `<h3>Stock bajo (${alerts.length})</h3>
+    <div class="aviso-lista">${alerts.map(a => `<div class="aviso-item">
+      <div><strong>${escapeHtml(a.name)}</strong>${a.code ? ` <span class="muted">${escapeHtml(a.code)}</span>` : ""}
+        <div class="muted">${a.stock === 0 ? "Agotado" : `Quedan ${a.stock} paquete${a.stock === 1 ? "" : "s"}`} · mínimo ${a.minStock}</div></div>
+      <div class="aviso-prov">${a.supplier
+        ? `Pedir a <strong>${escapeHtml(a.supplier.name)}</strong>${a.supplier.contact ? ` (${escapeHtml(a.supplier.contact)})` : ""}<br>${tel(a.supplier) ? `<a href="tel:${escapeHtml(tel(a.supplier))}">${escapeHtml(a.supplier.phone)}</a>` : escapeHtml(a.supplier.phone || "")}`
+        : `<span class="muted">Sin proveedor registrado</span>`}</div></div>`).join("")}</div>` : "";
+  const pedidosHtml = activos.length ? `<h3>Pedidos para hoy${activos.some(o => o.deliveryDate < hoy) ? " y atrasados" : ""} (${activos.length})</h3>
+    <div class="aviso-lista">${activos.map(o => `<div class="aviso-item">
+      <div><strong>${escapeHtml(o.number)} · ${escapeHtml(o.customerName)}</strong>
+        <div class="muted">${escapeHtml(o.description.length > 70 ? o.description.slice(0, 67) + "…" : o.description)}</div></div>
+      <div class="aviso-prov">${o.deliveryDate < hoy ? '<span class="badge danger">Atrasado</span>' : `<span class="badge low">Hoy${o.deliveryTime ? " " + escapeHtml(o.deliveryTime) : ""}</span>`}
+        <div class="muted">${escapeHtml(o.statusLabel)} · ${escapeHtml(o.responsible?.name || "")}</div></div></div>`).join("")}</div>` : "";
 
   const overlay = document.createElement("div");
   overlay.className = "stock-alert-overlay";
   overlay.setAttribute("role", "alertdialog");
   overlay.setAttribute("aria-modal", "true");
   overlay.setAttribute("aria-labelledby", "stock-alert-title");
-  overlay.innerHTML = `<div class="stock-alert">
-    <div class="stock-alert-icon">⚠️</div>
-    <h2 id="stock-alert-title">Stock bajo de rosas</h2>
-    ${alerts.map(a => {
-      const s = a.supplier;
-      const tel = s ? String(s.phone || "").replace(/[^\d+]/g, "") : "";
-      return `<p>Quedan <strong>${a.stock}</strong> unidades de <strong>${escapeHtml(a.name)}</strong> (mínimo ${a.minStock}). Hay que pedir más al último proveedor que las trajo:</p>
-      ${s ? `<div class="stock-alert-supplier">
-        <div><span>Proveedor</span><strong>${escapeHtml(s.name)}</strong></div>
-        ${s.contact ? `<div><span>Contacto</span><strong>${escapeHtml(s.contact)}</strong></div>` : ""}
-        <div><span>Teléfono</span><strong>${tel ? `<a href="tel:${escapeHtml(tel)}">${escapeHtml(s.phone)}</a>` : escapeHtml(s.phone || "—")}</strong></div>
-      </div>` : `<div class="stock-alert-supplier"><div>No hay proveedor registrado para este producto. Regístralo en <a href="/paginas/proveedores.html" style="text-decoration:underline">Proveedores</a> con el código ROS-001.</div></div>`}`;
-    }).join("")}
-    <div class="stock-alert-actions"><button type="button" class="btn btn-primary" id="stock-alert-close">Entendido</button></div>
+  overlay.innerHTML = `<div class="stock-alert aviso">
+    <div class="stock-alert-icon">${alerts.length ? "⚠️" : "📦"}</div>
+    <h2 id="stock-alert-title">Avisos del día</h2>
+    ${pedidosHtml}${stockHtml}
+    <div class="stock-alert-actions">
+      ${activos.length && !location.pathname.endsWith("/pedidos.html") ? '<a class="btn btn-secondary" href="/paginas/pedidos.html">Ver pedidos</a>' : ""}
+      <button type="button" class="btn btn-primary" id="stock-alert-close">Entendido</button></div>
   </div>`;
   const close = () => {
     try { sessionStorage.setItem(key, "1"); } catch { /* ignorar */ }
@@ -84,7 +97,40 @@ async function mostrarAlertasStock() {
   overlay.querySelector("#stock-alert-close").addEventListener("click", close);
   overlay.querySelector("#stock-alert-close").focus();
 }
-document.addEventListener("DOMContentLoaded", mostrarAlertasStock);
+
+// ---------- Cambiar mi contraseña ----------
+function abrirCambioClave() {
+  const overlay = document.createElement("div");
+  overlay.className = "stock-alert-overlay";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-labelledby", "pass-title");
+  overlay.innerHTML = `<form class="stock-alert" id="pass-form" style="text-align:left">
+    <h2 id="pass-title" style="text-align:center">Cambiar mi contraseña</h2>
+    <div id="pass-message"></div>
+    <div class="field"><label for="pass-current">Contraseña actual</label><input id="pass-current" type="password" autocomplete="current-password" required></div>
+    <div class="field"><label for="pass-new">Nueva contraseña</label><input id="pass-new" type="password" minlength="6" autocomplete="new-password" required></div>
+    <div class="field"><label for="pass-repeat">Repite la nueva contraseña</label><input id="pass-repeat" type="password" minlength="6" autocomplete="new-password" required></div>
+    <div class="stock-alert-actions"><button type="button" class="btn btn-secondary" id="pass-cancel">Cancelar</button><button class="btn btn-primary" type="submit">Guardar</button></div>
+  </form>`;
+  const close = () => { overlay.remove(); document.removeEventListener("keydown", onKey); };
+  const onKey = e => { if (e.key === "Escape") close(); };
+  document.addEventListener("keydown", onKey);
+  document.body.appendChild(overlay);
+  overlay.querySelector("#pass-cancel").addEventListener("click", close);
+  overlay.querySelector("#pass-current").focus();
+  overlay.querySelector("#pass-form").addEventListener("submit", async e => {
+    e.preventDefault();
+    const nueva = overlay.querySelector("#pass-new").value;
+    if (nueva !== overlay.querySelector("#pass-repeat").value) return showMessage(overlay.querySelector("#pass-message"), "Las contraseñas nuevas no coinciden.", "error");
+    try {
+      await api("/me/password", { method: "POST", body: JSON.stringify({ current: overlay.querySelector("#pass-current").value, password: nueva }) });
+      close();
+      const content = document.querySelector(".content");
+      if (content) { content.insertAdjacentHTML("afterbegin", '<div id="pass-ok"></div>'); showMessage("pass-ok", "Contraseña actualizada."); }
+    } catch (err) { showMessage(overlay.querySelector("#pass-message"), err.message, "error"); }
+  });
+}
 
 // ---------- Sesión y perfiles (administrador y vendedor) ----------
 // El servidor es quien valida los permisos; aquí solo se ocultan las opciones que el perfil no puede usar.
@@ -126,7 +172,9 @@ function pintarUsuario(user) {
     const initials = user.name.split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase();
     right.innerHTML = `<div class="user-box hide-mobile"><strong>${escapeHtml(user.name)}</strong><span>${escapeHtml(user.roleLabel)}</span></div>
       <div class="avatar" title="${escapeHtml(user.name)}">${escapeHtml(initials)}</div>
+      <button type="button" class="btn btn-secondary btn-small" id="password-btn" title="Cambiar mi contraseña">🔑<span class="hide-mobile"> Contraseña</span></button>
       <button type="button" class="btn btn-secondary btn-small" id="logout-btn">Salir</button>`;
+    document.getElementById("password-btn").addEventListener("click", abrirCambioClave);
     document.getElementById("logout-btn").addEventListener("click", async () => {
       try { await api("/logout", { method: "POST" }); } catch { /* igual se sale */ }
       location.href = "/paginas/login.html";
@@ -146,6 +194,7 @@ window.sessionReady = (async () => {
   try {
     window.USER = await api("/me");
     pintarUsuario(window.USER);
+    mostrarAvisos();
   } catch { /* api() ya redirige al inicio de sesión */ }
   return window.USER;
 })();

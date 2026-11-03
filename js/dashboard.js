@@ -9,7 +9,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const stats = [activeProducts.length,activeSuppliers.length,activeProducts.reduce((s,p)=>s+p.stock,0),sales.length];
       const target=document.getElementById("home-stats");
       if(target) target.innerHTML=stats.map((v,i)=>`<div class="stat-card"><div class="stat-top">${["Productos activos","Proveedores","Unidades en stock","Ventas registradas"][i]} <span class="stat-icon">${["✿","♧","▤","↗"][i]}</span></div><div class="stat-value">${fmt(v)}</div><div class="stat-note">${["En el catálogo","Activos","Paquetes registrados","Ingresos: "+euro(revenue)][i]}</div></div>`).join("");
-      const low=activeProducts.filter(p=>p.stock<=stockMinimo(p));
+      const low=activeProducts.filter(p=>!(p.recipe&&p.recipe.length)&&p.stock<=stockMinimo(p));
       const lowHtml=low.length?low.map(p=>`<div class="notice-item"><span class="notice-dot"></span><div style="flex:1"><strong>${escapeHtml(p.name)}</strong><div class="muted">${escapeHtml(p.category)}</div></div><span class="badge low">${p.stock} paquetes</span></div>`).join(""):`<div class="empty">No hay productos con stock bajo. ¡Todo en orden!</div>`;
       ["home-lowstock","dashboard-lowstock"].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=lowHtml;});
       const ds=document.getElementById("dashboard-stats");

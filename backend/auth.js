@@ -130,6 +130,22 @@ module.exports = function setupAuth(app, { readData, writeData, id, text }) {
 
   app.get("/api/me", (req, res) => res.json(req.user));
 
+  // Cada usuario puede cambiar su propia contraseña (pide la actual)
+  app.post("/api/me/password", (req, res) => {
+    const { current, password } = req.body || {};
+    const data = readData();
+    const u = (data.users || []).find(x => x.id === req.user.id);
+    if (!u || !verifyPassword(current || "", u.passwordHash)) return res.status(400).json({ error: "La contraseña actual no es correcta." });
+    if (!validPassword(password)) return res.status(400).json({ error: "La nueva contraseña debe tener al menos 6 caracteres." });
+    if (password === current) return res.status(400).json({ error: "La nueva contraseña debe ser distinta de la actual." });
+    u.passwordHash = hashPassword(password);
+    writeData(data);
+    // Se cierran sus otras sesiones abiertas (la actual sigue)
+    const mine = readCookie(req, COOKIE);
+    for (const [t, ses] of sessions) if (ses.userId === u.id && t !== mine) sessions.delete(t);
+    res.json({ ok: true });
+  });
+
   // ---- Permisos del vendedor: lo que NO puede hacer se responde con 403 ----
   const soloAdmin = (req, res, next) => req.user.role === "admin" ? next()
     : res.status(403).json({ error: "Esta acción solo la puede realizar un administrador." });

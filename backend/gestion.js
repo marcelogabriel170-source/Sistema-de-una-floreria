@@ -21,7 +21,7 @@ const fechaLima = iso => new Date(Date.parse(iso) - 5 * 3600 * 1000).toISOString
 const esFecha = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) && !Number.isNaN(Date.parse(v));
 
 module.exports = function setupGestion(app, deps) {
-  const { readData, writeData, id, text, addMovement, quien, nextCode, stockMinimo, enviarAlertaStockBajo, validRuc, round2 } = deps;
+  const { readData, writeData, id, text, addMovement, quien, nextCode, stockMinimo, enviarAlertaStockBajo, validRuc, round2, motor, ventas } = deps;
 
   const emisorActual = data => ({ ...EMISOR_INICIAL, ...(data.config && data.config.emisor) });
 
@@ -42,31 +42,42 @@ module.exports = function setupGestion(app, deps) {
     const data = readData();
     const product = (data.products || []).find(p => p.id === req.body.productId && p.active);
     if (!product) return res.status(400).json({ error: "Elige un producto activo." });
+    if (motor.tieneReceta(product)) return res.status(400).json({ error: `${product.name} es un arreglo con receta: registra la merma de sus insumos.` });
+    const unit = req.body.unit === "tallo" ? "tallo" : "paquete";
     const quantity = Number(req.body.quantity);
-    if (!Number.isInteger(quantity) || quantity < 1) return res.status(400).json({ error: "La cantidad de merma debe ser un número entero mayor que cero (en paquetes)." });
-    if (quantity > product.stock) return res.status(400).json({ error: `No puedes registrar más merma que el stock. Disponible: ${product.stock}.` });
+    if (!Number.isInteger(quantity) || quantity < 1) return res.status(400).json({ error: `La cantidad de merma debe ser un número entero mayor que cero (en ${unit}s).` });
+    const spp = Number(product.stemsPerPackage) || 0;
+    if (unit === "tallo" && !spp) return res.status(400).json({ error: `${product.name} no maneja tallos sueltos. Configura «tallos por paquete» en Productos.` });
+    const disponible = unit === "tallo" ? (Number(product.looseStems) || 0) : product.stock;
+    if (quantity > disponible) {
+      return res.status(400).json({ error: unit === "tallo"
+        ? `Solo hay ${disponible} tallos sueltos de ${product.name}. Si la merma es de un paquete cerrado, regístrala en paquetes.`
+        : `No puedes registrar más merma que el stock. Disponible: ${disponible} paquetes.` });
+    }
     const reason = req.body.reason;
     if (!MOTIVOS_MERMA[reason]) return res.status(400).json({ error: "Elige el motivo de la merma." });
     const note = text(req.body.note);
     if (reason === "otro" && !note) return res.status(400).json({ error: "Describe el motivo en el detalle." });
 
-    const stockBefore = product.stock;
-    product.stock -= quantity;
+    const stockBefore = unit === "tallo" ? (Number(product.looseStems) || 0) : product.stock;
+    if (unit === "tallo") product.looseStems = stockBefore - quantity; else product.stock -= quantity;
+    const stockAfter = unit === "tallo" ? product.looseStems : product.stock;
     const number = nextCode(data, "wasteCorrelativo", "MR");
-    const unitCost = costoEn(data, product.id, new Date().toISOString());
+    const costoPaquete = costoEn(data, product.id, new Date().toISOString());
+    const unitCost = costoPaquete === null ? null : (unit === "tallo" ? costoPaquete / spp : costoPaquete);
     const record = {
       id: id("mr"), number, date: new Date().toISOString(), user: quien(),
-      productId: product.id, productName: product.name, quantity, reason, reasonLabel: MOTIVOS_MERMA[reason], note,
-      unitCost, value: unitCost === null ? null : round2(unitCost * quantity), stockBefore, stockAfter: product.stock
+      productId: product.id, productName: product.name, quantity, unit, reason, reasonLabel: MOTIVOS_MERMA[reason], note,
+      unitCost: unitCost === null ? null : round2(unitCost), value: unitCost === null ? null : round2(unitCost * quantity), stockBefore, stockAfter
     };
     if (!Array.isArray(data.waste)) data.waste = [];
     data.waste.unshift(record);
     addMovement(data, {
-      type: "merma", productId: product.id, productName: product.name, quantity,
-      stockBefore, stockAfter: product.stock, reference: number, note: `Merma: ${MOTIVOS_MERMA[reason]}${note ? " · " + note : ""}`
+      type: "merma", unit, productId: product.id, productName: product.name, quantity,
+      stockBefore, stockAfter, reference: number, note: `Merma: ${MOTIVOS_MERMA[reason]}${note ? " · " + note : ""}`
     });
     writeData(data);
-    if (product.stock <= stockMinimo(product)) enviarAlertaStockBajo(product, data);
+    if (unit === "paquete" && product.stock <= stockMinimo(product)) enviarAlertaStockBajo(product, data);
     res.status(201).json(record);
   });
 
@@ -79,18 +90,26 @@ module.exports = function setupGestion(app, deps) {
     const reason = text(req.body.reason);
     if (reason.length < 3) return res.status(400).json({ error: "Escribe el motivo de la anulación." });
 
-    // Devuelve al stock lo vendido de cada producto
-    for (const item of sale.items || []) {
-      if (item.type !== "product") continue;
-      const product = data.products.find(p => p.id === item.productId);
-      if (!product) continue;
-      const stockBefore = product.stock;
-      product.stock += item.quantity;
-      addMovement(data, {
-        type: "devolucion", productId: product.id, productName: product.name, quantity: item.quantity,
-        stockBefore, stockAfter: product.stock, reference: sale.ticketNumber, note: `Anulación: ${reason}`
-      });
+    // Devuelve al stock lo que salió con la venta (insumos de recetas y tallos incluidos)
+    if (Array.isArray(sale.consumption)) {
+      motor.devolver(data, sale.consumption, sale.ticketNumber, `Anulación: ${reason}`);
+    } else {
+      // Ventas anteriores al motor de stock: se devuelve por producto vendido
+      for (const item of sale.items || []) {
+        if (item.type !== "product") continue;
+        const product = data.products.find(p => p.id === item.productId);
+        if (!product) continue;
+        const stockBefore = product.stock;
+        product.stock += item.quantity;
+        addMovement(data, {
+          type: "devolucion", productId: product.id, productName: product.name, quantity: item.quantity,
+          stockBefore, stockAfter: product.stock, reference: sale.ticketNumber, note: `Anulación: ${reason}`
+        });
+      }
     }
+    // Si venía de un pedido, el pedido queda otra vez sin venta
+    const order = (data.orders || []).find(o => o.saleId === sale.id);
+    if (order) { order.saleId = null; order.saleNumber = null; }
     sale.status = "anulada";
     sale.voided = { date: new Date().toISOString(), reason, user: quien() };
     if (data.lastTicket && data.lastTicket.id === sale.id) data.lastTicket = sale;
@@ -134,6 +153,18 @@ module.exports = function setupGestion(app, deps) {
     if (!actual || body.deliveryTime !== undefined) o.deliveryTime = text(body.deliveryTime);
     if (!actual || body.total !== undefined) o.total = body.total === "" || body.total === null || body.total === undefined ? null : Number(body.total);
     if (!actual || body.advance !== undefined) o.advance = body.advance === "" || body.advance === null || body.advance === undefined ? 0 : Number(body.advance);
+    if (!actual || body.items !== undefined) {
+      o.items = [];
+      for (const raw of Array.isArray(body.items) ? body.items : []) {
+        const p = (data.products || []).find(x => x.id === raw.productId && x.active);
+        const quantity = Number(raw.quantity);
+        if (!p) return { error: "Hay productos del pedido que no existen o están inactivos." };
+        if (!Number.isInteger(quantity) || quantity < 1) return { error: `Indica una cantidad entera mayor que cero para ${p.name}.` };
+        const prev = o.items.find(i => i.productId === p.id);
+        if (prev) prev.quantity += quantity; else o.items.push({ productId: p.id, name: p.name, quantity });
+      }
+    }
+    if (!actual || body.customerDoc !== undefined) o.customerDoc = text(body.customerDoc);
     if (!actual || body.responsibleId !== undefined) {
       const u = (data.users || []).find(x => x.id === body.responsibleId && x.active);
       o.responsible = u ? { id: u.id, name: u.name } : null;
@@ -176,6 +207,9 @@ module.exports = function setupGestion(app, deps) {
     if (r.error) return res.status(400).json({ error: r.error });
     const status = req.body.status;
     if (status !== undefined && !ESTADOS_PEDIDO[status]) return res.status(400).json({ error: "Estado no válido." });
+    if (order.saleId && (req.body.items !== undefined || req.body.total !== undefined || (status && status !== "entregado"))) {
+      return res.status(400).json({ error: `El pedido ya tiene la venta ${order.saleNumber}. Anúlala primero si necesitas cambiar productos, precio o estado.` });
+    }
     Object.assign(order, r.order);
     if (status && status !== order.status) {
       order.status = status;
@@ -185,6 +219,28 @@ module.exports = function setupGestion(app, deps) {
     order.updatedAt = new Date().toISOString();
     writeData(data);
     res.json(order);
+  });
+
+  // Convertir un pedido entregado en venta: genera la boleta o factura y descuenta del stock los productos del pedido
+  app.post("/api/orders/:id/sale", (req, res) => {
+    const data = readData();
+    const order = (data.orders || []).find(o => o.id === req.params.id);
+    if (!order) return res.status(404).json({ error: "Pedido no encontrado." });
+    if (order.status !== "entregado") return res.status(400).json({ error: "Primero marca el pedido como entregado." });
+    if (order.saleId) return res.status(400).json({ error: `Este pedido ya tiene la venta ${order.saleNumber}.` });
+    if (!(Number(order.total) > 0)) return res.status(400).json({ error: "El pedido no tiene precio acordado. Edítalo y escribe el precio antes de generar la venta." });
+    const detalle = order.description.length > 70 ? order.description.slice(0, 67) + "…" : order.description;
+    const cargo = { type: "order", orderId: order.id, name: `Pedido ${order.number}: ${detalle}`, quantity: 1, unitPrice: round2(order.total), subtotal: round2(order.total) };
+    const r = ventas.crearVenta(data, req.body || {}, {
+      cargo, consumir: (order.items || []).map(i => ({ productId: i.productId, quantity: i.quantity })),
+      motivo: `Pedido ${order.number}`, extra: { orderId: order.id, orderNumber: order.number }
+    });
+    if (r.error) return res.status(400).json({ error: r.error });
+    order.saleId = r.sale.id;
+    order.saleNumber = r.sale.ticketNumber;
+    order.updatedAt = new Date().toISOString();
+    writeData(data);
+    res.status(201).json({ order, sale: r.sale });
   });
 
   // ---------- 5. Reportes con filtro de fechas (objetivo 8, solo administrador) ----------
@@ -202,14 +258,29 @@ module.exports = function setupGestion(app, deps) {
     const anuladas = ventas.filter(s => s.status === "anulada");
 
     // Productos vendidos: cantidad, ingresos, costo y ganancia
+    const costoDe = (iso) => pid => costoEn(data, pid, iso);
+    const costoConsumo = (s) => {          // costo de lo que salió del stock en una venta (para pedidos)
+      let total = 0;
+      for (const c of s.consumption || []) {
+        const unit = costoEn(data, c.productId, s.date);
+        if (unit === null) return null;
+        const spp = (data.products.find(p => p.id === c.productId) || {}).stemsPerPackage || 0;
+        total += unit * c.packages + (c.stems ? (spp ? unit / spp * c.stems : NaN) : 0);
+      }
+      return Number.isNaN(total) ? null : total;
+    };
     const porProducto = new Map();
     for (const s of validas) {
       for (const i of s.items || []) {
-        const key = i.type === "product" ? i.productId : "acc:" + i.name;
-        const row = porProducto.get(key) || { name: i.name, type: i.type === "product" ? "Producto" : "Accesorio", quantity: 0, revenue: 0, cost: 0, sinCosto: 0 };
+        const key = i.type === "product" ? i.productId : i.type === "order" ? "pedidos" : "acc:" + i.name;
+        const nombre = i.type === "order" ? "Pedidos personalizados" : i.name;
+        const tipo = i.type === "product" ? (i.recipe ? "Arreglo (receta)" : "Producto") : i.type === "order" ? "Pedido" : "Accesorio";
+        const row = porProducto.get(key) || { name: nombre, type: tipo, quantity: 0, revenue: 0, cost: 0, sinCosto: 0 };
         row.quantity += i.quantity;
         row.revenue += i.subtotal;
-        const c = i.type === "product" ? costoEn(data, i.productId, s.date) : null;
+        let c = null;
+        if (i.type === "product") c = i.recipe ? motor.costoReceta(data, i.recipe, costoDe(s.date)) : costoEn(data, i.productId, s.date);
+        if (i.type === "order") { const t = costoConsumo(s); c = t === null || !(s.consumption || []).length ? null : t; }
         if (c === null) row.sinCosto += i.quantity; else row.cost += c * i.quantity;
         porProducto.set(key, row);
       }
@@ -220,18 +291,18 @@ module.exports = function setupGestion(app, deps) {
       margin: r.sinCosto === r.quantity || !r.revenue ? null : round2((r.revenue - r.cost) / r.revenue * 100)
     })).sort((a, b) => b.quantity - a.quantity || b.revenue - a.revenue);
 
-    // Merma del periodo
+    // Merma del periodo (en paquetes o en tallos sueltos)
     const mermas = (data.waste || []).filter(w => enRango(w.date));
     const mermaPorProducto = new Map();
     for (const w of mermas) {
-      const row = mermaPorProducto.get(w.productId) || { name: w.productName, quantity: 0, value: 0, sinCosto: 0, motivos: {} };
-      row.quantity += w.quantity;
+      const row = mermaPorProducto.get(w.productId) || { name: w.productName, quantity: 0, stems: 0, value: 0, sinCosto: 0, motivos: {} };
+      if (w.unit === "tallo") row.stems += w.quantity; else row.quantity += w.quantity;
       if (w.value === null) row.sinCosto += w.quantity; else row.value += w.value;
-      row.motivos[w.reasonLabel] = (row.motivos[w.reasonLabel] || 0) + w.quantity;
+      row.motivos[w.reasonLabel] = (row.motivos[w.reasonLabel] || 0) + 1;
       mermaPorProducto.set(w.productId, row);
     }
     const mermaPorMotivo = {};
-    for (const w of mermas) mermaPorMotivo[w.reasonLabel] = (mermaPorMotivo[w.reasonLabel] || 0) + w.quantity;
+    for (const w of mermas) mermaPorMotivo[w.reasonLabel] = (mermaPorMotivo[w.reasonLabel] || 0) + 1;
 
     // Compras por proveedor (entradas de mercadería con su costo)
     const compras = new Map();
@@ -257,13 +328,14 @@ module.exports = function setupGestion(app, deps) {
         ventas: validas.length, ingresos, igv: round2(validas.reduce((a, s) => a + (s.igv || 0), 0)),
         costoVendido, ganancia: round2(ingresos - costoVendido),
         anuladas: anuladas.length, montoAnulado: round2(anuladas.reduce((a, s) => a + s.total, 0)),
-        mermaPaquetes: mermas.reduce((a, w) => a + w.quantity, 0),
+        mermaPaquetes: mermas.filter(w => w.unit !== "tallo").reduce((a, w) => a + w.quantity, 0),
+        mermaTallos: mermas.filter(w => w.unit === "tallo").reduce((a, w) => a + w.quantity, 0),
         mermaValor: round2(mermas.reduce((a, w) => a + (w.value || 0), 0)),
         compras: round2([...compras.values()].reduce((a, c) => a + c.amount, 0)),
         pedidos: pedidos.length
       },
       productos,
-      merma: { porProducto: [...mermaPorProducto.values()].map(r => ({ ...r, value: round2(r.value) })).sort((a, b) => b.quantity - a.quantity), porMotivo: mermaPorMotivo, registros: mermas },
+      merma: { porProducto: [...mermaPorProducto.values()].map(r => ({ ...r, value: round2(r.value) })).sort((a, b) => b.value - a.value), porMotivo: mermaPorMotivo, registros: mermas },
       compras: [...compras.values()].map(r => ({ ...r, amount: round2(r.amount) })).sort((a, b) => b.amount - a.amount),
       pedidos: { porEstado: contar(pedidos.map(o => ({ s: ESTADOS_PEDIDO[o.status] })), "s"), porCanal: contar(pedidos, "channelLabel") },
       ventasDetalle: ventas.map(s => ({ ticketNumber: s.ticketNumber, date: s.date, customer: s.customer?.name || "", seller: s.seller?.name || "", total: s.total, status: s.status === "anulada" ? "Anulada" : "Válida", voidReason: s.voided?.reason || "" }))

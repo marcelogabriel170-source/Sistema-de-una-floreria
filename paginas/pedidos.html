@@ -86,6 +86,13 @@
               <div class="field"><label for="order-time">Hora de entrega</label><input id="order-time" type="time"></div>
               <div class="field"><label for="order-total">Precio acordado (S/)</label><input id="order-total" type="number" min="0" step="0.01" placeholder="Opcional"></div>
               <div class="field"><label for="order-advance">Adelanto (S/)</label><input id="order-advance" type="number" min="0" step="0.01" placeholder="0,00"></div>
+              <div class="field full">
+                <label>Productos que usa el pedido</label>
+                <small class="muted" style="margin-bottom:6px">Opcional. Al generar la venta se descuentan del stock (los arreglos con receta descuentan sus insumos).</small>
+                <div id="order-items"></div>
+                <div><button type="button" class="btn btn-secondary btn-small" id="order-item-add">＋ Agregar producto</button></div>
+              </div>
+              <div class="field"><label for="order-doc">DNI o RUC del cliente</label><input id="order-doc" inputmode="numeric" maxlength="11" placeholder="Para la boleta o factura"></div>
               <div class="field full"><label for="order-description">Detalle del pedido *</label><textarea id="order-description" maxlength="800" required placeholder="Arreglo, flores, colores, dedicatoria, dirección de entrega…"></textarea></div>
               <div class="field hidden" id="order-status-field"><label for="order-status">Estado</label>
                 <select id="order-status">

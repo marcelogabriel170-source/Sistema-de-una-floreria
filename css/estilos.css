@@ -99,3 +99,23 @@ body:not(.rol-admin):not(.rol-vendedor) .solo-admin { visibility: hidden; }
 .cpe-anulado-banner{margin:-6px 0 14px;padding:8px 10px;border:2px solid #a23e37;color:#a23e37;font-weight:700;text-align:center;letter-spacing:2px;border-radius:4px}
 .cpe-anulado-banner span{display:block;letter-spacing:0;font-weight:400;font-size:11px;margin-top:2px}
 .cpe-anulado table,.cpe-anulado .cpe-header{opacity:.6}
+
+/* ---------- Receta de arreglos ---------- */
+.recipe-row{display:grid;grid-template-columns:minmax(0,1fr) 80px 120px auto;gap:8px;margin-bottom:8px;align-items:center}
+.recipe-row select,.recipe-row input{width:100%;border:1px solid #dfe3dc;border-radius:10px;background:#fff;padding:9px 10px}
+@media (max-width:640px){.recipe-row{grid-template-columns:1fr 70px;}.recipe-row .rec-unit{grid-column:1}}
+
+/* ---------- Productos de un proveedor ---------- */
+.code-checks{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px;margin-top:6px}
+.code-check{display:flex;gap:8px;align-items:center;border:1px solid #dfe3dc;border-radius:10px;padding:8px 10px;font-size:12px;font-weight:400;color:var(--ink);cursor:pointer}
+.code-check input{width:auto}
+.code-check.inactive{opacity:.5}
+
+/* ---------- Avisos del día ---------- */
+.stock-alert.aviso{max-width:560px;text-align:left}
+.stock-alert.aviso h2,.stock-alert.aviso .stock-alert-icon{text-align:center}
+.stock-alert.aviso h3{font-size:14px;margin:16px 0 6px}
+.aviso-lista{max-height:220px;overflow:auto;border:1px solid #eef0ea;border-radius:10px}
+.aviso-item{display:flex;justify-content:space-between;gap:12px;padding:9px 12px;border-bottom:1px solid #f0f1ed;font-size:13px}
+.aviso-item:last-child{border-bottom:0}
+.aviso-prov{text-align:right;font-size:12px;min-width:150px}

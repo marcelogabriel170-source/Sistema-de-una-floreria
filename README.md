@@ -98,6 +98,22 @@ Cámbialos al entrar, en la página **Usuarios**. Para que las contraseñas inic
 
 **Reportes (objetivo 8, solo administrador).** Filtro por fechas; ventas, ganancia estimada (ventas − costo de compra vigente a la fecha de cada venta), productos más vendidos, merma del periodo, compras por proveedor y pedidos. El botón «Exportar a Excel» descarga un .xlsx con cinco hojas (Resumen, Productos, Merma, Compras y Ventas). La librería SheetJS está incluida en `js/vendor/` (licencia Apache-2.0), así que funciona sin internet.
 
+## Stock como trabaja una florería (recetas, tallos sueltos y más)
+
+**Recetas de arreglos.** En Productos, un arreglo (ramo, caja…) puede tener receta: qué insumos usa y cuántos, en paquetes o en tallos. Ejemplo: Ramo Aurora = 6 tallos de rosas + 2 tallos de follaje + 1 paquete de papel coreano. Al venderlo se descuentan los insumos (no el stock propio del arreglo) y la venta muestra cuántos se pueden armar con lo que hay. Un insumo no puede tener receta propia.
+
+**Tallos sueltos (remanentes).** Si un producto tiene «tallos por paquete» (12, 24…), en Inventario › Existencias se puede abrir un paquete: pasa a tallos sueltos. Las recetas que usan tallos toman primero los sueltos y, si faltan, abren paquetes automáticamente. La merma se puede registrar en paquetes o en tallos sueltos. Si se anula una venta, los tallos vuelven como sueltos.
+
+**Pedidos que se convierten en venta.** Un pedido puede indicar qué productos usa. Cuando se marca como entregado aparece «Generar boleta»: pide el DNI (boleta) o RUC (factura), cobra el precio acordado del pedido y descuenta del stock sus productos o los insumos de sus recetas. Si esa venta se anula, el pedido queda libre para generarla de nuevo.
+
+**Stock mínimo por producto.** Cada producto tiene su propio mínimo (por defecto 5, y 10 para rosas). Al llegar a él se avisa en pantalla y por WhatsApp, con el proveedor al que hay que pedir.
+
+**Códigos de producto y proveedores con varios productos.** Los códigos (ROS-001, etc.) se crean y editan en Productos. Un proveedor puede abastecer varios productos: se marcan en su ficha y todos aparecen al registrar sus entradas.
+
+**Cambiar mi contraseña.** Botón «Contraseña» en la barra superior, para cualquier usuario (pide la contraseña actual).
+
+**Avisos del día.** Al entrar se muestra una ventana con los productos en su stock mínimo y los pedidos para hoy o atrasados.
+
 ## Consulta automática de DNI y RUC
 - El RUC usa openruc.com y no necesita configuración.
 - El DNI usa apis.net.pe, que exige un token. Antes no se enviaba ninguno y por eso la consulta fallaba. Para activarla:
