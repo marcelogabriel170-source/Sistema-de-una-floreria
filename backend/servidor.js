@@ -1,6 +1,7 @@
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 
@@ -22,10 +23,132 @@ const DATA_DIR = path.join(__dirname);
 const DATA_FILE = path.join(DATA_DIR, "data.json");
 
 app.use(express.json({ limit: "1mb" }));
+
+// ==========================================
+// INICIO DE SESIÓN Y ROLES (administrador y vendedor)
+// ==========================================
+// Las contraseñas se guardan con scrypt (nunca en texto plano en memoria) y se pueden cambiar en el archivo .env:
+// ADMIN_USER, ADMIN_PASSWORD, VENDEDOR_USER, VENDEDOR_PASSWORD
+function hashPassword(password, salt) { return crypto.scryptSync(String(password), salt, 32); }
+function crearUsuario(username, password, role, name) {
+  const salt = crypto.randomBytes(16);
+  return { username: String(username).trim().toLowerCase(), role, name, salt, hash: hashPassword(password, salt) };
+}
+const USUARIOS = [
+  crearUsuario(process.env.ADMIN_USER || "admin", process.env.ADMIN_PASSWORD || "Admin2026", "administrador", "Administrador"),
+  crearUsuario(process.env.VENDEDOR_USER || "vendedor", process.env.VENDEDOR_PASSWORD || "Vendedor2026", "vendedor", "Vendedor")
+];
+const SALT_FALSA = crypto.randomBytes(16);
+
+const SESION_HORAS = 8;
+const sesiones = new Map();          // token -> { username, name, role, expira }
+const intentosFallidos = new Map();  // ip -> { count, hasta }
+
+// Páginas que puede abrir el vendedor. ticket.html es el comprobante que se abre al confirmar una venta.
+const PAGINAS_VENDEDOR = new Set(["index.html", "inventario.html", "proveedores.html", "nueva-venta.html", "ticket.html"]);
+// API que puede usar el vendedor (todo lo demás exige ser administrador).
+// Nota: /alerts/stock (aviso de stock bajo) NO está aquí: solo lo recibe el administrador.
+const API_VENDEDOR = [
+  ["GET", /^\/(products|suppliers|product-codes|costs|associations|sales|ticket\/latest|inventory\/(entries|movements|counts)|inventory\/counts\/[^/]+|suppliers\/[^/]+\/products|consulta-(dni|ruc)\/[^/]+)$/],
+  ["POST", /^\/(sales|suppliers|inventory\/(entries|counts))$/],
+  ["PUT", /^\/suppliers\/[^/]+$/],
+  ["PATCH", /^\/suppliers\/[^/]+\/active$/]
+];
+
+function leerCookie(req, nombre) {
+  for (const parte of String(req.headers.cookie || "").split(";")) {
+    const i = parte.indexOf("=");
+    if (i > 0 && parte.slice(0, i).trim() === nombre) return decodeURIComponent(parte.slice(i + 1).trim());
+  }
+  return null;
+}
+function getSesion(req) {
+  const token = leerCookie(req, "sf_session");
+  const sesion = token && sesiones.get(token);
+  if (!sesion) return null;
+  if (sesion.expira < Date.now()) { sesiones.delete(token); return null; }
+  return sesion;
+}
+function cookieSesion(token, maxAge) {
+  return `sf_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`;
+}
+
+app.post("/api/auth/login", (req, res) => {
+  const ip = req.ip || "local";
+  const previo = intentosFallidos.get(ip);
+  if (previo && previo.hasta > Date.now()) {
+    return res.status(429).json({ error: "Demasiados intentos. Espera un minuto e inténtalo de nuevo." });
+  }
+  const username = String(req.body.username || "").trim().toLowerCase();
+  const password = String(req.body.password || "");
+  const user = USUARIOS.find(u => u.username === username);
+  const calculado = hashPassword(password, user ? user.salt : SALT_FALSA);
+  const valido = !!user && crypto.timingSafeEqual(calculado, user.hash);
+
+  if (!valido) {
+    const bloqueoVencido = previo && previo.hasta > 0 && previo.hasta <= Date.now();
+    const registro = (!previo || bloqueoVencido) ? { count: 0, hasta: 0 } : previo;
+    registro.count += 1;
+    if (registro.count >= 5) { registro.hasta = Date.now() + 60 * 1000; registro.count = 0; }
+    intentosFallidos.set(ip, registro);
+    return res.status(401).json({ error: "Usuario o contraseña incorrectos." });
+  }
+
+  intentosFallidos.delete(ip);
+  const token = crypto.randomBytes(32).toString("hex");
+  sesiones.set(token, { username: user.username, name: user.name, role: user.role, expira: Date.now() + SESION_HORAS * 3600 * 1000 });
+  res.setHeader("Set-Cookie", cookieSesion(token, SESION_HORAS * 3600));
+  res.json({ username: user.username, name: user.name, role: user.role });
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  const token = leerCookie(req, "sf_session");
+  if (token) sesiones.delete(token);
+  res.setHeader("Set-Cookie", cookieSesion("", 0));
+  res.json({ ok: true });
+});
+
+// Todo lo demás de /api exige sesión y respeta el rol
+app.use("/api", (req, res, next) => {
+  if (req.path === "/health" || req.path === "/auth/login" || req.path === "/auth/logout") return next();
+  const sesion = getSesion(req);
+  if (!sesion) return res.status(401).json({ error: "Inicia sesión para continuar." });
+
+  // Protección básica contra peticiones enviadas desde otro sitio
+  if (!["GET", "HEAD"].includes(req.method) && req.headers.origin) {
+    let origenOk = false;
+    try { origenOk = new URL(req.headers.origin).host === req.headers.host; } catch { /* origen inválido */ }
+    if (!origenOk) return res.status(403).json({ error: "Origen no permitido." });
+  }
+
+  req.sesion = sesion;
+  if (sesion.role === "vendedor" && req.path !== "/auth/me") {
+    const permitido = API_VENDEDOR.some(([metodo, patron]) => metodo === req.method && patron.test(req.path));
+    if (!permitido) return res.status(403).json({ error: "Tu rol de vendedor no tiene permiso para esta acción." });
+  }
+  next();
+});
+
+app.get("/api/auth/me", (req, res) => {
+  const { username, name, role } = req.sesion;
+  res.json({ username, name, role });
+});
+
+// Páginas: sin sesión se ve solo el login; el vendedor solo abre sus páginas
+function paginaProtegida(req, res, next) {
+  const archivo = path.basename(req.path) || "index.html";
+  const sesion = getSesion(req);
+  if (archivo === "login.html") {
+    return sesion ? res.redirect("/paginas/index.html") : next();
+  }
+  if (!sesion) return res.redirect("/paginas/login.html");
+  if (sesion.role === "vendedor" && !PAGINAS_VENDEDOR.has(archivo)) return res.redirect("/paginas/index.html");
+  next();
+}
 app.use("/css", express.static(path.join(ROOT, "css")));
 app.use("/js", express.static(path.join(ROOT, "js")));
 app.use("/imagenes", express.static(path.join(ROOT, "imagenes")));
-app.use("/paginas", express.static(path.join(ROOT, "paginas")));
+app.use("/paginas", paginaProtegida, express.static(path.join(ROOT, "paginas")));
 
 // ==========================================
 // CONFIGURACIÓN DE WHATSAPP (CLIENTE LOCAL)
@@ -77,28 +200,10 @@ function productoPorCodigo(data, code) {
   return (data.products || []).find(p => p.code === code) || null;
 }
 
-// Último proveedor que trajo el producto: primero la entrada de inventario más reciente;
-// si todavía no hay entradas, el último proveedor registrado con el código de ese producto.
-function ultimoProveedor(data, product) {
-  const suppliers = data.suppliers || [];
-  for (const entry of data.entries || []) {            // data.entries va de la más nueva a la más vieja
-    if ((entry.items || []).some(i => i.productId === product.id)) {
-      const s = suppliers.find(x => x.id === entry.supplierId);
-      return {
-        name: (s && s.name) || entry.supplierName || "",
-        contact: (s && s.contact) || "",
-        phone: (s && s.phone) || "",
-        origin: `Última entrada ${entry.number}`
-      };
-    }
-  }
-  const linked = (data.associations || [])
-    .filter(a => a.productId === product.id)
-    .map(a => ({ a, s: suppliers.find(x => x.id === a.supplierId) }))
-    .filter(x => x.s)
-    .sort((x, y) => new Date(y.a.createdAt) - new Date(x.a.createdAt));
-  const best = linked.find(x => x.s.active) || linked[0];
-  return best ? { name: best.s.name, contact: best.s.contact, phone: best.s.phone, origin: "Proveedor registrado para este producto" } : null;
+// Proveedor al que se le piden las rosas cuando el stock baja (aparece en la alerta y en el WhatsApp)
+const PROVEEDOR_ROSAS = { name: "Fabio Rojas", contact: "Fabio Rojas", phone: "913162052" };
+function ultimoProveedor() {
+  return { ...PROVEEDOR_ROSAS, origin: "Proveedor de rosas" };
 }
 
 // Alertas que ve la pantalla: por ahora las rosas con stock en el mínimo o por debajo
@@ -210,6 +315,24 @@ function migrarCodigos() {
       .map(a => data.products.find(p => p.id === a.productId))
       .find(p => p && CODIGOS_PRODUCTO.some(c => c.code === p.code));
     if (product) { s.productCode = product.code; changed = true; }
+  }
+
+  // Proveedor de rosas: Fabio Rojas (ROS-001). Se crea si no existe y se vincula a las rosas.
+  const soloDigitos = v => String(v || "").replace(/\D/g, "");
+  if (!Array.isArray(data.suppliers)) data.suppliers = [];
+  let fabio = data.suppliers.find(x => soloDigitos(x.phone) === PROVEEDOR_ROSAS.phone || normalizar(x.name) === normalizar(PROVEEDOR_ROSAS.name));
+  if (!fabio) {
+    fabio = {
+      id: id("s"), ruc: "", name: PROVEEDOR_ROSAS.name, address: "", status: "", condition: "",
+      contact: PROVEEDOR_ROSAS.contact, phone: PROVEEDOR_ROSAS.phone, email: "", productCode: CODIGO_ROSAS,
+      notes: "Proveedor de rosas", active: true, createdAt: new Date().toISOString()
+    };
+    data.suppliers.unshift(fabio);
+    changed = true;
+  }
+  const rosas = productoPorCodigo(data, CODIGO_ROSAS);
+  if (rosas && !(data.associations || []).some(a => a.supplierId === fabio.id && a.productId === rosas.id)) {
+    if (!vincularProveedor(data, fabio, CODIGO_ROSAS)) changed = true;
   }
 
   if (changed) writeData(data);
@@ -503,7 +626,7 @@ app.get("/api/product-codes", (_req, res) => {
   }));
 });
 
-// Alertas de stock para mostrar en pantalla (rosas con 10 o menos)
+// Alertas de stock para mostrar en pantalla (rosas con 10 o menos). Solo administrador: el middleware de /api le niega esta ruta al vendedor.
 app.get("/api/alerts/stock", (_req, res) => res.json(alertasDeStock(readData())));
 
 // El código identifica el producto que abastece el proveedor y crea el vínculo para las entradas de inventario
@@ -1029,10 +1152,10 @@ app.post("/api/sales", (req, res) => {
 app.get("/api/sales", (_req, res) => res.json(readData().sales || []));
 app.get("/api/ticket/latest", (_req, res) => res.json(readData().lastTicket));
 
-app.get("/", (_req, res) => res.sendFile(path.join(ROOT, "paginas", "index.html")));
+app.get("/", (req, res) => res.redirect(getSesion(req) ? "/paginas/index.html" : "/paginas/login.html"));
 app.get("*", (req, res, next) => {
   if (req.path.startsWith("/api/")) return next();
-  res.sendFile(path.join(ROOT, "paginas", "index.html"));
+  res.redirect("/");
 });
 
 app.use((err, _req, res, _next) => {

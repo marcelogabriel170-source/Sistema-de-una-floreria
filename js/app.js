@@ -1,3 +1,4 @@
+document.documentElement.classList.add("auth-pending");
 const API = "/api";
 // Moneda: Soles (PEN). Se mantiene el nombre "euro" para no romper las páginas que ya lo usan.
 const euro = value => "S/ " + new Intl.NumberFormat("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value || 0));
@@ -10,6 +11,7 @@ async function api(path, options = {}) {
     headers: { "Content-Type": "application/json", ...(options.headers || {}) }
   });
   const payload = response.status === 204 ? null : await response.json().catch(() => ({}));
+  if (response.status === 401) { location.href = "/paginas/login.html"; throw new Error("Inicia sesión para continuar."); }
   if (!response.ok) throw new Error(payload?.error || "No se pudo completar la operación.");
   return payload;
 }
@@ -44,9 +46,8 @@ async function mostrarAlertasStock() {
   try { alerts = await api("/alerts/stock"); } catch { return; }
   if (!Array.isArray(alerts) || !alerts.length) return;
 
-  // Se vuelve a mostrar cuando cambia el stock (por ejemplo, después de otra venta)
-  const key = "alertaStock:" + alerts.map(a => `${a.productId}:${a.stock}`).join("|");
-  try { if (sessionStorage.getItem(key)) return; } catch { /* sin sessionStorage: se muestra siempre */ }
+  // Se muestra siempre que se abre o se cambia de página mientras el stock siga en el mínimo o por debajo
+  if (document.querySelector(".stock-alert-overlay")) return;
 
   const overlay = document.createElement("div");
   overlay.className = "stock-alert-overlay";
@@ -62,14 +63,13 @@ async function mostrarAlertasStock() {
       return `<p>Quedan <strong>${a.stock}</strong> unidades de <strong>${escapeHtml(a.name)}</strong> (mínimo ${a.minStock}). Hay que pedir más al último proveedor que las trajo:</p>
       ${s ? `<div class="stock-alert-supplier">
         <div><span>Proveedor</span><strong>${escapeHtml(s.name)}</strong></div>
-        ${s.contact ? `<div><span>Contacto</span><strong>${escapeHtml(s.contact)}</strong></div>` : ""}
+        ${s.contact && s.contact !== s.name ? `<div><span>Contacto</span><strong>${escapeHtml(s.contact)}</strong></div>` : ""}
         <div><span>Teléfono</span><strong>${tel ? `<a href="tel:${escapeHtml(tel)}">${escapeHtml(s.phone)}</a>` : escapeHtml(s.phone || "—")}</strong></div>
       </div>` : `<div class="stock-alert-supplier"><div>No hay proveedor registrado para este producto. Regístralo en <a href="/paginas/proveedores.html" style="text-decoration:underline">Proveedores</a> con el código ROS-001.</div></div>`}`;
     }).join("")}
     <div class="stock-alert-actions"><button type="button" class="btn btn-primary" id="stock-alert-close">Entendido</button></div>
   </div>`;
   const close = () => {
-    try { sessionStorage.setItem(key, "1"); } catch { /* ignorar */ }
     overlay.remove();
     document.removeEventListener("keydown", onKey);
   };
@@ -79,4 +79,41 @@ async function mostrarAlertasStock() {
   overlay.querySelector("#stock-alert-close").addEventListener("click", close);
   overlay.querySelector("#stock-alert-close").focus();
 }
-document.addEventListener("DOMContentLoaded", mostrarAlertasStock);
+// (La ventana ya no se abre aquí para todos: iniciarSesionUI() la lanza solo si el usuario es administrador.)
+
+// ---------- Sesión y roles ----------
+// El vendedor solo ve: Resumen, Inventario, Proveedores y Nueva venta. (El servidor también lo exige.)
+const PAGINAS_VENDEDOR = ["index.html", "inventario.html", "proveedores.html", "nueva-venta.html"];
+
+async function iniciarSesionUI() {
+  try {
+    const me = await api("/auth/me");
+    window.USUARIO = me;
+    document.body.dataset.role = me.role;
+
+    // Aviso de stock bajo: solo para el administrador. El vendedor no lo ve (ni la ventana ni los paneles marcados con .solo-admin).
+    if (me.role === "administrador") mostrarAlertasStock();
+
+    if (me.role === "vendedor") {
+      // Quita del menú y de los botones todo enlace a páginas que no le corresponden
+      document.querySelectorAll('a[href^="/paginas/"]').forEach(a => {
+        const destino = a.getAttribute("href").split(/[?#]/)[0].split("/").pop();
+        if (!PAGINAS_VENDEDOR.includes(destino)) a.remove();
+      });
+    }
+
+    const top = document.querySelector(".top-right");
+    if (top) {
+      const iniciales = me.name.split(/\s+/).map(x => x[0]).join("").slice(0, 2).toUpperCase();
+      top.innerHTML = `<div class="user-chip hide-mobile"><strong>${escapeHtml(me.username)}</strong><span>${escapeHtml(me.role)}</span></div>
+        <div class="avatar" title="${escapeHtml(me.name)}">${escapeHtml(iniciales)}</div>
+        <button type="button" class="btn btn-secondary btn-small logout-btn" id="logout-btn">Cerrar sesión</button>`;
+      document.getElementById("logout-btn").addEventListener("click", async () => {
+        try { await fetch(`${API}/auth/logout`, { method: "POST" }); } catch { /* ignorar */ }
+        location.href = "/paginas/login.html";
+      });
+    }
+  } catch { /* api() ya redirige al login si no hay sesión */ }
+  finally { document.documentElement.classList.remove("auth-pending"); }
+}
+document.addEventListener("DOMContentLoaded", iniciarSesionUI);

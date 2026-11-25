@@ -58,7 +58,31 @@ Al registrar o editar un proveedor se pide un **código de producto**, que adem�
 
 Al arrancar, el servidor asigna estos códigos a los productos existentes y crea los que falten (stock 0). Los proveedores antiguos reciben el código del producto que ya tenían asociado.
 
-**Alerta de rosas.** Cuando el stock de las rosas llega a 10 o menos (el resto de productos sigue avisando con 5 o menos) se muestra una ventana de alerta en pantalla y se envía el mensaje de WhatsApp. Indica que hay que pedir más al último proveedor que las trajo, con su nombre, la persona de contacto y el teléfono. El "último proveedor" es el de la entrada de inventario más reciente que incluya rosas; si todavía no hay entradas, el último proveedor registrado con el código ROS-001.
+**Alerta de rosas.** Cuando el stock de las rosas llega a 10 o menos (el resto de productos sigue avisando con 5 o menos) se muestra una ventana de alerta en pantalla y se envía el mensaje de WhatsApp. La ventana aparece en **cada página** que se abre mientras el stock siga bajo.
+
+**El aviso de stock bajo es solo para el administrador.** El vendedor no ve la ventana de alerta, ni el panel "Revisión de existencias" del Resumen, ni la tarjeta "Stock bajo" de Inventario (allí solo ve "Disponible" o "Agotado", sin "Reponer pronto"). Además el servidor le niega `/api/alerts/stock` (HTTP 403), así que no depende solo de lo que muestre la pantalla. El WhatsApp sigue llegando al número configurado en `enviarAlertaStockBajo`. Indica que hay que pedir más al proveedor de rosas: **Fabio Rojas, teléfono 913162052** (definido en `PROVEEDOR_ROSAS` de `backend/servidor.js`). Al arrancar, el servidor crea a Fabio Rojas en Proveedores con el código ROS-001 si no existe (RUC y correo quedan vacíos hasta que se completen al editarlo).
+
+## Inicio de sesión y roles
+Al abrir el sistema se pide usuario y contraseña (`/paginas/login.html`). La sesión dura 8 horas y se cierra con el botón "Cerrar sesión". Tras 5 intentos fallidos se bloquea el acceso 1 minuto.
+
+| Rol | Usuario | Contraseña inicial | Páginas |
+|---|---|---|---|
+| Administrador | `admin` | `Admin2026` | Todas |
+| Vendedor | `vendedor` | `Vendedor2026` | Resumen, Inventario, Proveedores y Nueva venta |
+
+Para cambiar usuarios o contraseñas, agrega estas líneas al archivo `.env` y reinicia: `ADMIN_USER`, `ADMIN_PASSWORD`, `VENDEDOR_USER`, `VENDEDOR_PASSWORD`.
+
+Los permisos se validan en el servidor, no solo en el menú (incluida la alerta de stock bajo, que es solo del administrador): el vendedor no puede abrir las demás páginas ni usar la API de catálogo, costos, asociaciones ni el volcado de datos. Al confirmar una venta abre su comprobante (`ticket.html`), pero sin el listado de Comprobantes en el menú.
+
+## IGV en los comprobantes
+Los precios del sistema ya incluyen IGV (18 %). El IGV **siempre se calcula y se guarda** en cada venta (`opGravada`, `igv` y el detalle por línea en `data.json`), pero **solo se muestra en la factura**:
+
+| Comprobante | Qué se ve en pantalla, impresión y CSV |
+|---|---|
+| Boleta | Cantidad, descripción, precio unitario, importe y **importe total**. Sin Op. gravada, sin I.G.V. y sin la leyenda "Los precios incluyen IGV". |
+| Factura | Detalle tributario completo: valor unitario, valor de venta, Op. gravada, exonerada, inafecta, I.G.V. (18 %) e importe total. |
+
+En la pantalla de **Nueva venta**, el renglón "Op. gravada · IGV (18%)" tampoco aparece con Boleta; solo se muestra al elegir Factura. La "Lista general" en CSV (pestaña Comprobantes) conserva las columnas Op. gravada e IGV porque es un reporte interno de contabilidad.
 
 ## Consulta automática de DNI y RUC
 - El RUC usa openruc.com y no necesita configuración.

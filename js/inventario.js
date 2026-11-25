@@ -48,6 +48,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // Estado del producto. "Reponer pronto" es un aviso de stock bajo: el vendedor solo ve "Disponible" o "Agotado".
+  function estadoStock(p) {
+    if (p.stock === 0) return `<span class="badge low">Agotado</span>`;
+    if (p.stock <= LOW_STOCK) return `<span class="badge low solo-admin">Reponer pronto</span><span class="badge solo-vendedor">Disponible</span>`;
+    return `<span class="badge">Disponible</span>`;
+  }
+
   function renderStock() {
     const q = $("inventory-search").value.toLowerCase();
     const list = products.filter(p => [p.name, p.category].some(v => String(v).toLowerCase().includes(q)));
@@ -59,8 +66,9 @@ document.addEventListener("DOMContentLoaded", () => {
       ["Stock bajo", "!", low.length, `${LOW_STOCK} paquetes o menos`],
       ["Sin existencias", "○", none.length, "Stock igual a cero"]
     ];
+    // La tarjeta "Stock bajo" es un aviso de reposición: solo la ve el administrador
     $("inventory-stats").innerHTML = stats.map(([label, icon, value, note]) =>
-      `<div class="stat-card"><div class="stat-top">${label} <span class="stat-icon">${icon}</span></div><div class="stat-value">${value}</div><div class="stat-note">${note}</div></div>`
+      `<div class="stat-card${label === "Stock bajo" ? " solo-admin" : ""}"><div class="stat-top">${label} <span class="stat-icon">${icon}</span></div><div class="stat-value">${value}</div><div class="stat-note">${note}</div></div>`
     ).join("");
 
     $("inventory-table").innerHTML = list.length ? list.map(p => `
@@ -68,7 +76,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <td><div class="product-cell"><div class="product-thumb">${productIcon(p.category)}</div><div><div class="product-name">${escapeHtml(p.name)}</div><div class="muted">${escapeHtml(p.description || "")}</div></div></div></td>
         <td>${escapeHtml(p.category)}</td>
         <td class="price">${p.stock}</td>
-        <td><span class="badge ${p.stock <= LOW_STOCK ? "low" : ""}">${p.stock === 0 ? "Agotado" : p.stock <= LOW_STOCK ? "Reponer pronto" : "Disponible"}</span></td>
+        <td>${estadoStock(p)}</td>
         <td><a class="btn btn-secondary btn-small" href="/paginas/catalogo.html">Editar stock</a></td>
       </tr>`).join("") : emptyRow(5, "No hay resultados.");
   }

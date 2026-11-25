@@ -132,6 +132,16 @@ function renderComprobante(rawSale) {
         <td class="num">${money(s.isFactura ? i.valorVenta : i.subtotal)}</td>
       </tr>`).join("");
 
+  // El IGV siempre se calcula y se guarda en la venta, pero SOLO se muestra en la factura.
+  // En la boleta (y en el ticket antiguo) únicamente aparece el importe total.
+  const totalesHtml = s.isFactura
+    ? `<tr><td>Op. gravada</td><td>S/</td><td class="num">${money(s.opGravada)}</td></tr>
+      <tr><td>Op. exonerada</td><td>S/</td><td class="num">${money(s.opExonerada)}</td></tr>
+      <tr><td>Op. inafecta</td><td>S/</td><td class="num">${money(s.opInafecta)}</td></tr>
+      <tr><td>I.G.V. (18%)</td><td>S/</td><td class="num">${money(s.igv)}</td></tr>
+      <tr class="cpe-total"><td>IMPORTE TOTAL</td><td>S/</td><td class="num">${money(s.total)}</td></tr>`
+    : `<tr class="cpe-total"><td>IMPORTE TOTAL</td><td>S/</td><td class="num">${money(s.total)}</td></tr>`;
+
   return `
   <div class="cpe" id="comprobante-imprimible">
     <div class="cpe-header">
@@ -165,11 +175,7 @@ function renderComprobante(rawSale) {
     </table>
 
     <table class="cpe-totales">
-      <tr><td>Op. gravada</td><td>S/</td><td class="num">${money(s.opGravada)}</td></tr>
-      <tr><td>Op. exonerada</td><td>S/</td><td class="num">${money(s.opExonerada)}</td></tr>
-      <tr><td>Op. inafecta</td><td>S/</td><td class="num">${money(s.opInafecta)}</td></tr>
-      <tr><td>I.G.V. (18%)</td><td>S/</td><td class="num">${money(s.igv)}</td></tr>
-      <tr class="cpe-total"><td>IMPORTE TOTAL</td><td>S/</td><td class="num">${money(s.total)}</td></tr>
+      ${totalesHtml}
     </table>
 
     <div class="cpe-letras">SON: ${numeroALetras(s.total)}</div>
@@ -177,7 +183,7 @@ function renderComprobante(rawSale) {
     <div class="cpe-footer">
       ${s.isTicket
         ? "Ticket interno emitido antes de implementar boletas y facturas."
-        : `Representación impresa de la ${s.isFactura ? "Factura Electrónica" : "Boleta de Venta Electrónica"}.<br>Los precios incluyen IGV.`}
+        : `Representación impresa de la ${s.isFactura ? "Factura Electrónica" : "Boleta de Venta Electrónica"}.${s.isFactura ? "<br>Los precios incluyen IGV." : ""}`}
       <div style="margin-top:8px">Gracias por elegir Studio Floral 🌷</div>
     </div>
   </div>`;

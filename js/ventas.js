@@ -89,6 +89,7 @@ document.addEventListener("DOMContentLoaded", () => {
             completeButton.textContent = isFactura
                 ? "Confirmar venta y emitir factura"
                 : "Confirmar venta y emitir boleta";
+            updateTaxBreakdown();
             updateCompleteButton();
         });
     });
@@ -246,9 +247,17 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
         totalElement.textContent = euro(total);
+        updateTaxBreakdown(total);
+        updateCompleteButton();
+    }
+
+    // El IGV se calcula siempre (el servidor lo guarda en la venta), pero solo se muestra en pantalla si el comprobante es factura.
+    function updateTaxBreakdown(total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)) {
+        const isFactura = documentType() === "factura";
+        taxElement.classList.toggle("hidden", !isFactura);
+        if (!isFactura) { taxElement.textContent = ""; return; }
         const opGravada = Math.round((total / (1 + IGV_RATE)) * 100) / 100;
         taxElement.textContent = `Op. gravada: ${euro(opGravada)} · IGV (18%): ${euro(total - opGravada)}`;
-        updateCompleteButton();
     }
 
     // Evento al cambiar la categoría seleccionada

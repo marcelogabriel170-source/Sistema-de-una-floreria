@@ -54,16 +54,27 @@ document.addEventListener("DOMContentLoaded", async () => {
                 [c.customer.docType, c.customer.docNumber],
                 ...(c.customer.address ? [["Dirección", c.customer.address]] : [])
             ]),
-            [],
-            ["Cantidad", "Unidad", "Descripción", "Valor unitario (sin IGV)", "Precio unitario (con IGV)", "Valor venta", "IGV", "Importe"]
+            []
         ];
-        c.items.forEach(i => {
-            rows.push([i.quantity, i.unit, i.name, i.valorUnitario, i.unitPrice, i.valorVenta, i.igv, i.subtotal]);
-        });
-        rows.push([]);
-        rows.push(["Op. gravada", "", "", "", "", "", "", c.opGravada]);
-        rows.push(["IGV (18%)", "", "", "", "", "", "", c.igv]);
-        rows.push(["IMPORTE TOTAL", "", "", "", "", "", "", c.total]);
+        if (c.isFactura) {
+            // Factura: detalle tributario completo
+            rows.push(["Cantidad", "Unidad", "Descripción", "Valor unitario (sin IGV)", "Precio unitario (con IGV)", "Valor venta", "IGV", "Importe"]);
+            c.items.forEach(i => {
+                rows.push([i.quantity, i.unit, i.name, i.valorUnitario, i.unitPrice, i.valorVenta, i.igv, i.subtotal]);
+            });
+            rows.push([]);
+            rows.push(["Op. gravada", "", "", "", "", "", "", c.opGravada]);
+            rows.push(["IGV (18%)", "", "", "", "", "", "", c.igv]);
+            rows.push(["IMPORTE TOTAL", "", "", "", "", "", "", c.total]);
+        } else {
+            // Boleta: sin IGV, solo precio unitario e importe
+            rows.push(["Cantidad", "Unidad", "Descripción", "Precio unitario", "Importe"]);
+            c.items.forEach(i => {
+                rows.push([i.quantity, i.unit, i.name, i.unitPrice, i.subtotal]);
+            });
+            rows.push([]);
+            rows.push(["IMPORTE TOTAL", "", "", "", c.total]);
+        }
         rows.push(["SON", numeroALetras(c.total)]);
 
         const csv = rows.map(row => row.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(";")).join("\r\n");
